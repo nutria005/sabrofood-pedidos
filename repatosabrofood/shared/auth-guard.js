@@ -9,6 +9,7 @@ import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/fi
  * Protege una ruta verificando que el usuario esté autenticado
  * Si no está autenticado, redirige automáticamente a la página de login
  * @returns {Promise} Resuelve con el usuario si está autenticado, rechaza si no lo está
+ * @note La ruta '../index.html' asume que las páginas protegidas están un nivel debajo de index.html
  */
 export function protegerRuta() {
   return new Promise((resolve, reject) => {
