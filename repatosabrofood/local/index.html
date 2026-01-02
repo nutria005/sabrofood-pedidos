@@ -13,6 +13,16 @@
   <script src="script.js?v=20251217" defer></script>
 </head>
 <body>
+  <!-- Protección de ruta con Firebase Authentication -->
+  <script type="module">
+    import { protegerRuta } from '../shared/auth-guard.js';
+    
+    // Proteger esta página - redirige a login si no está autenticado
+    protegerRuta().catch(() => {
+      console.log('Redirigiendo a login...');
+    });
+  </script>
+  
   <div class="wrap">
     <header style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">

@@ -286,9 +286,18 @@
       <form class="login-form" id="loginForm">
         <div class="input-group">
           <input 
+            type="email" 
+            id="emailInput" 
+            placeholder="Correo electrónico" 
+            autocomplete="email"
+            required
+          />
+        </div>
+        <div class="input-group">
+          <input 
             type="password" 
             id="passwordInput" 
-            placeholder="Clave de acceso" 
+            placeholder="Contraseña" 
             autocomplete="current-password"
             required
           />
@@ -344,84 +353,64 @@
     </div>
   </div>
 
-  <script>
-    // === AUTENTICACIÓN SIMPLIFICADA ===
-    const CONFIG_SEGURIDAD = {
-      claveHash: "b9c950640e1ac86b3aa0a7b5d0f6b5ad",
-      sessionKey: "pedidos_auth_session",
-      tiempoSesion: 24 * 60 * 60 * 1000
-    };
+  <script type="module">
+    // === AUTENTICACIÓN CON FIREBASE ===
+    // Sistema de autenticación seguro usando Firebase Authentication
+    // Reemplaza el sistema anterior basado en contraseñas hardcodeadas
+    
+    import { auth } from './shared/firebase-config.js';
+    import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
-    function hashSimple(str) {
-      let hash = 0;
-      if (str.length === 0) return hash;
-      for (let i = 0; i < str.length; i++) {
-        const char = str.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash;
-      }
-      return Math.abs(hash).toString(16);
-    }
-
-    function verificarSesion() {
-      const sesionStr = localStorage.getItem(CONFIG_SEGURIDAD.sessionKey);
-      if (!sesionStr) return false;
-      try {
-        const sesion = JSON.parse(sesionStr);
-        const ahora = Date.now();
-        return (ahora - sesion.timestamp) < CONFIG_SEGURIDAD.tiempoSesion;
-      } catch {
-        return false;
-      }
-    }
-
-    function guardarSesion() {
-      const sesion = {
-        timestamp: Date.now(),
-        autenticado: true
-      };
-      localStorage.setItem(CONFIG_SEGURIDAD.sessionKey, JSON.stringify(sesion));
-    }
-
-    function cerrarSesion() {
-      localStorage.removeItem(CONFIG_SEGURIDAD.sessionKey);
-      window.location.reload();
-    }
-
-    // Verificar sesión al cargar
+    // Verificar si el usuario ya tiene una sesión activa al cargar la página
     window.addEventListener('DOMContentLoaded', () => {
-      if (verificarSesion()) {
-        mostrarSeleccionRol();
-      }
+      onAuthStateChanged(auth, (user) => {
+        if (user) {
+          // Usuario ya autenticado - mostrar selección de rol directamente
+          mostrarSeleccionRol();
+        }
+      });
     });
 
-    // Manejar login
-    document.getElementById('loginForm').addEventListener('submit', (e) => {
+    // Manejar el envío del formulario de login
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const email = document.getElementById('emailInput').value;
       const password = document.getElementById('passwordInput').value;
       const errorMsg = document.getElementById('errorMessage');
       
-      // Validar contraseña (comparando con el hash MD5 de "0603")
-      if (hashSimple(password) === CONFIG_SEGURIDAD.claveHash || password === '0603') {
-        guardarSesion();
+      try {
+        // Intentar iniciar sesión con Firebase Authentication
+        await signInWithEmailAndPassword(auth, email, password);
         errorMsg.style.display = 'none';
         mostrarSeleccionRol();
-      } else {
-        errorMsg.textContent = '❌ Clave incorrecta';
+      } catch (error) {
+        // Manejar errores de autenticación con mensajes amigables
+        let mensaje = '❌ Error al iniciar sesión';
+        
+        if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+          mensaje = '❌ Credenciales incorrectas';
+        } else if (error.code === 'auth/user-not-found') {
+          mensaje = '❌ Usuario no encontrado';
+        } else if (error.code === 'auth/too-many-requests') {
+          mensaje = '❌ Demasiados intentos. Intenta más tarde';
+        } else if (error.code === 'auth/invalid-email') {
+          mensaje = '❌ Correo electrónico inválido';
+        }
+        
+        errorMsg.textContent = mensaje;
         errorMsg.style.display = 'block';
         document.getElementById('passwordInput').value = '';
-        document.getElementById('passwordInput').focus();
       }
     });
 
-    // Mostrar pantalla de selección de rol
+    // Mostrar pantalla de selección de rol (ocultar login)
     function mostrarSeleccionRol() {
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('roleScreen').style.display = 'block';
     }
 
-    // Seleccionar rol y redirigir
-    function seleccionarRol(rol) {
+    // Seleccionar rol y redirigir a la interfaz correspondiente
+    window.seleccionarRol = function(rol) {
       if (rol === 'repartidor') {
         window.location.href = 'repartidor/index.html';
       } else if (rol === 'local') {
@@ -429,10 +418,19 @@
       }
     }
 
-    // Cerrar sesión completa
-    function cerrarSesionCompleta() {
+    // Cerrar sesión completa - vuelve al login
+    window.cerrarSesionCompleta = async function() {
       if (confirm('¿Seguro que deseas cerrar sesión?')) {
-        cerrarSesion();
+        try {
+          await signOut(auth);
+          // Volver a mostrar pantalla de login
+          document.getElementById('roleScreen').style.display = 'none';
+          document.getElementById('loginScreen').style.display = 'block';
+          document.getElementById('emailInput').value = '';
+          document.getElementById('passwordInput').value = '';
+        } catch (error) {
+          console.error('Error al cerrar sesión:', error);
+        }
       }
     }
   </script>
