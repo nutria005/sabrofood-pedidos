@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Sistema administrativo de gestión de pedidos - Panel completo">
+  <meta name="theme-color" content="#4b6cb7">
+  <title>🏢 Admin Local | Sistema de Pedidos</title>
+  <link rel="stylesheet" href="style.css?v=20251221">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../shared/supabase-config.js?v=20251217"></script>
+  <script src="../shared/auth.js?v=20251217"></script>
+  <script src="script.js?v=20251217" defer></script>
+</head>
+<body>
+  <div class="wrap">
+    <header style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <h1 class="title">🏢 Admin Local</h1>
+        <span style="background:#4b6cb7;color:white;padding:4px 12px;border-radius:6px;font-size:0.75rem;font-weight:600;letter-spacing:0.5px;">MODO: LOCAL</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:6px;background:#f3f4f6;padding:4px 10px;border-radius:8px;" title="Ajustar densidad de vista">
+          <span style="font-size:0.85rem;">📐</span>
+          <input type="range" id="densitySlider" min="0.6" max="1.1" step="0.05" value="1" style="width:80px;cursor:pointer;" aria-label="Control de densidad">
+          <span id="densityValue" style="font-size:0.75rem;color:#6b7280;min-width:35px;">100%</span>
+        </div>
+        
+        <div id="contadorProgreso" style="background:#f3f4f6;padding:6px 12px;border-radius:8px;font-size:0.9rem;font-weight:600;color:#374151;display:flex;gap:4px;align-items:center;" title="Entregados / Anulados / Total">
+          <span id="contadorEntregados" style="color:#059669;">✅ 0</span>
+          <span style="color:#9ca3af;">/</span>
+          <span id="contadorAnulados" style="color:#6b7280;">🚫 0</span>
+          <span style="color:#9ca3af;">/</span>
+          <span id="contadorTotal" style="color:#374151;">📦 0</span>
+        </div>
+        
+        <button id="btnVerCarga" class="btn-ver-carga" aria-label="Ver resumen de carga">
+          📦 Ver Carga
+        </button>
+        
+        <div id="connectionStatus" class="connection-status online" role="status" aria-live="polite">
+          <span class="status-icon" aria-hidden="true">🟢</span>
+          <span class="status-text">Online</span>
+        </div>
+        
+        <div id="offlineCounter" class="offline-counter" style="display:none;" role="status" aria-live="polite">
+          <span class="counter-icon" aria-hidden="true">📡</span>
+          <span class="counter-text" id="offlineCounterText">0</span>
+        </div>
+        
+        <div id="status" style="font-size:13px;color:var(--muted);" role="status">Estado: Conectando...</div>
+        
+        <a href="../index.html" id="btnCerrarSesion" class="ghost" style="font-size:11px;padding:4px 8px;text-decoration:none;display:inline-block;" title="Cerrar Sesión" aria-label="Cerrar sesión">
+          🔒 Salir
+        </a>
+      </div>
+    </header>
+
+    <section class="resumen-caja-panel" aria-labelledby="resumen-title">
+      <div class="resumen-caja-card">
+        <h3 id="resumen-title">💰 Recaudación del Día</h3>
+        
+        <div class="total-general">
+          <span class="total-label">💰 TOTAL RECAUDADO:</span>
+          <span class="total-valor" id="totalRendir" aria-live="polite">$0</span>
+        </div>
+        
+        <div class="total-general" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-top: 12px;">
+          <span class="total-label">🏢 TOTAL LOCAL (Venta):</span>
+          <span class="total-valor" id="totalLocal" aria-live="polite">$0</span>
+        </div>
+        
+        <div class="resumen-grid-cuadre">
+          <div class="resumen-item efectivo">
+            <span class="resumen-label">💵 Efectivo</span>
+            <span class="resumen-valor" id="totalEfectivo" aria-live="polite">$0</span>
+            <small class="resumen-detalle" id="cantidadEfectivo">0 pedidos</small>
+          </div>
+          
+          <div class="resumen-item tarjetas">
+            <span class="resumen-label">💳 Débito/Crédito</span>
+            <span class="resumen-valor" id="totalTarjetas" aria-live="polite">$0</span>
+            <small class="resumen-detalle" id="cantidadTarjetas">0 pedidos</small>
+          </div>
+          
+          <div class="resumen-item transferencias">
+            <span class="resumen-label">⏳ Transf. Pendientes</span>
+            <span class="resumen-valor" id="totalTransferencias" aria-live="polite">$0</span>
+            <small class="resumen-detalle" id="cantidadTransferencias">0 pedidos</small>
+          </div>
+          
+          <div class="resumen-item pagados">
+            <span class="resumen-label">✅ Transf. Pagadas</span>
+            <span class="resumen-valor" id="totalPagados" aria-live="polite">$0</span>
+            <small class="resumen-detalle" id="cantidadPagados">0 pedidos</small>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="card" aria-labelledby="pedidos-title">
+        <h2 id="pedidos-title" class="sr-only">Lista de Pedidos</h2>
+        
+        <div class="flex flex-gap-8" style="margin-bottom:12px;">
+          <div class="flex flex-gap-8 flex-center">
+            <label for="filterDate" class="sr-only">Filtrar por fecha</label>
+            <input id="filterDate" type="date" title="Filtrar por fecha de entrega" aria-label="Filtrar por fecha de entrega" />
+            
+            <div class="filtros-rapidos" role="group" aria-label="Filtros rápidos de fecha">
+              <button id="btnHoy" class="ghost filtro-fecha" type="button" data-filtro="hoy" aria-label="Mostrar pedidos de hoy">
+                📅 Hoy
+              </button>
+              <button id="btnManana" class="ghost filtro-fecha" type="button" data-filtro="manana" aria-label="Mostrar pedidos de mañana">
+                📅 Mañana
+              </button>
+              <button id="btnMes" class="ghost filtro-fecha active" type="button" data-filtro="mes" aria-label="Mostrar pedidos del mes" aria-pressed="true">
+                📆 Este Mes
+              </button>
+            </div>
+          </div>
+          
+          <label for="buscador" class="sr-only">Buscar pedidos</label>
+          <input id="buscador" type="search" placeholder="Buscar por teléfono, nombre, producto o fecha..." aria-label="Buscar pedidos" />
+          
+          <button id="btnBuscar" class="ghost" style="width:120px;" aria-label="Realizar búsqueda">Buscar</button>
+          
+          <div id="resultCount" style="min-width:120px;text-align:right;font-size:13px;color:var(--muted);align-self:center;" aria-live="polite" aria-atomic="true">
+            --
+          </div>
+        </div>
+        
+        <div id="resultados" class="results" role="region" aria-live="polite" aria-busy="false">
+          <div class="item">Cargando datos desde la nube...</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="histModal" class="modal-backdrop" role="dialog" aria-hidden="true" aria-labelledby="histModalTitle">
+    <div class="modal" role="document">
+      <div class="modal-header">
+        <strong id="histModalTitle">Historial del Cliente</strong>
+        <div>
+          <button id="histExport" class="ghost" style="margin-right:8px;" aria-label="Exportar historial">
+            Exportar
+          </button>
+          <button id="histClose" class="modal-close" aria-label="Cerrar historial">
+            Cerrar
+          </button>
+        </div>
+      </div>
+      <div id="histModalBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <button id="btnOpenForm" 
+          style="position:fixed;right:32px;bottom:32px;z-index:1000;background:#4b6cb7;color:#fff;border:none;border-radius:50%;width:56px;height:56px;font-size:2rem;box-shadow:0 4px 16px rgba(30,41,59,.18);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:box-shadow .2s,transform .2s;"
+          aria-label="Abrir formulario de nuevo pedido"
+          title="Crear nuevo pedido">
+    +
+  </button>
+
+  <div id="formModalBackdrop" 
+       style="position:fixed;inset:0;background:rgba(30,41,59,.18);display:none;align-items:center;justify-content:center;z-index:9999;"
+       role="dialog"
+       aria-hidden="true"
+       aria-labelledby="formModalTitle">
+    <div id="formModal" 
+         style="background:#fff;border-radius:18px;box-shadow:0 10px 30px rgba(30,41,59,.18);max-width:540px;width:100%;padding:32px 28px;position:relative;max-height:90vh;overflow-y:auto;">
+      
+      <button id="btnCloseForm" 
+              style="position:absolute;top:18px;right:18px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;padding:4px 12px;cursor:pointer;font-size:1.2rem;"
+              aria-label="Cerrar formulario">
+        ✕
+      </button>
+      
+      <form id="formAgregar" onsubmit="return false;" novalidate>
+        
+        <fieldset class="form-section">
+          <legend class="section-title">👤 Datos del Cliente</legend>
+          
+          <div class="form-row">
+            <label for="telefono" class="sr-only">Teléfono del cliente</label>
+            <input id="telefono" type="tel" placeholder="📱 Teléfono (Obligatorio)" style="margin-bottom:8px;" required aria-required="true" />
+          </div>
+          
+          <div class="form-row">
+            <label for="nombre" class="sr-only">Nombre del cliente</label>
+            <input id="nombre" type="text" placeholder="👤 Nombre (opcional)" style="margin-bottom:8px;" />
+          </div>
+          
+          <div class="form-row">
+            <label for="direccion" class="sr-only">Dirección de entrega</label>
+            <input id="direccion" type="text" placeholder="📍 Dirección de entrega" style="margin-bottom:8px;" />
+          </div>
+        </fieldset>
+        
+        <div id="historialPreview" class="historial-preview" style="display:none; margin-bottom:16px;" aria-live="polite">
+          <div class="historial-header">
+            <span class="historial-title">📚 Historial del Cliente</span>
+            <span class="historial-count" id="historialCount"></span>
+          </div>
+          <div id="historialContent" class="historial-content">
+            <div class="historial-loading">🔍 Buscando historial...</div>
+          </div>
+        </div>
+        
+        <fieldset class="form-section">
+          <legend class="section-title">📅 Fecha y Ruta</legend>
+          
+          <div class="form-row-grid">
+            <div class="form-field">
+              <label for="fechaEntrega" class="form-label">Fecha de Entrega</label>
+              <input id="fechaEntrega" type="date" style="font-size:1.05rem;" required aria-required="true" />
+            </div>
+            
+            <div class="form-field">
+              <label for="rutaSelect" class="form-label">Ruta</label>
+              <select id="rutaSelect" style="font-size:1.05rem;" aria-label="Seleccionar ruta de entrega">
+                <option value="A">🔴 Ruta A - Alta</option>
+                <option value="B">🟡 Ruta B - Media</option>
+                <option value="C">🟢 Ruta C - Baja</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="form-row" style="margin-top:12px;">
+            <label for="asignadoA" class="form-label" style="display:block;margin-bottom:6px;font-weight:600;color:#374151;">🚚 Asignar a Chofer</label>
+            <select id="asignadoA" style="font-size:1.05rem;" aria-label="Asignar pedido a chofer">
+              <option value="">Sin asignar</option>
+              <option value="repartidor_1">Repartidor 1</option>
+              <option value="repartidor_2">Repartidor 2</option>
+            </select>
+          </div>
+        </fieldset>
+        
+        <fieldset class="form-section">
+          <legend class="section-title">🛒 Productos del Pedido</legend>
+          
+          <div class="form-row" style="display:grid;grid-template-columns:0.7fr 2fr 1fr 1fr;gap:8px;align-items:center;margin-bottom:8px;">
+            <label for="itemCantidad" class="sr-only">Cantidad</label>
+            <input id="itemCantidad" type="number" min="1" value="1" placeholder="Cant." style="width:100%;" aria-label="Cantidad de producto" />
+            
+            <label for="itemProducto" class="sr-only">Producto</label>
+            <input id="itemProducto" type="text" placeholder="Producto (ej. Cat Chow 3kg)" style="width:100%;" aria-label="Nombre del producto" />
+            
+            <label for="itemPrecio" class="sr-only">Precio</label>
+            <input id="itemPrecio" type="number" min="0" step="1" placeholder="Precio" style="width:100%;" aria-label="Precio del producto" />
+            
+            <button type="button" id="btnAnadirItem" class="ghost" style="width:100%;font-size:1.1rem;" aria-label="Añadir producto al pedido">
+              ➕
+            </button>
+          </div>
+          
+          <div id="lineasPedidoContainer" style="margin:10px 0 0 0;" role="list" aria-label="Lista de productos en el pedido"></div>
+          
+          <div id="pedidoTotalDisplay" style="font-weight:700;color:#16a34a;text-align:right;margin-bottom:8px;font-size:1.3rem;" aria-live="polite"></div>
+        </fieldset>
+        
+        <fieldset class="form-section">
+          <legend class="section-title">💳 Método de Pago</legend>
+          
+          <div class="form-row" style="margin-bottom:8px;">
+            <label for="metodoPago" class="sr-only">Método de pago</label>
+            <select id="metodoPago" style="font-size:1.05rem;" aria-label="Seleccionar método de pago">
+              <option value="E">💵 Efectivo</option>
+              <option value="DC">💳 Débito/Crédito</option>
+              <option value="TP">⏳ Transf. Pendiente</option>
+              <option value="TG">✅ Transf. Pagada</option>
+              <option value="P">💰 Pagado</option>
+            </select>
+          </div>
+        </fieldset>
+        
+        <fieldset class="form-section">
+          <legend class="section-title">📝 Notas Adicionales</legend>
+          
+          <div class="form-row" style="margin-bottom:12px;">
+            <label for="notas" class="sr-only">Notas adicionales</label>
+            <textarea id="notas" rows="3" placeholder="Observaciones, detalles especiales, instrucciones de entrega..." style="resize:vertical;" aria-label="Notas y observaciones del pedido"></textarea>
+          </div>
+        </fieldset>
+        
+        <div style="display:flex;gap:10px;margin-bottom:8px;">
+          <button id="btnAgregar" type="submit" style="flex:1;font-size:1.1rem;" aria-label="Guardar nuevo pedido">
+            Agregar Pedido
+          </button>
+          <button id="btnLimpiar" class="ghost" type="button" style="flex:1;font-size:1.1rem;" aria-label="Limpiar formulario">
+            Limpiar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <div id="modalCarga" class="modal-carga-backdrop" style="display:none;" role="dialog" aria-hidden="true" aria-labelledby="modalCargaTitle">
+    <div class="modal-carga">
+      <div class="modal-carga-header">
+        <h3 id="modalCargaTitle">📦 Manifiesto de Carga</h3>
+        <button id="btnCerrarCarga" class="btn-cerrar-modal" aria-label="Cerrar resumen de carga">✕</button>
+      </div>
+      <div id="modalCargaBody" class="modal-carga-body"></div>
+      <div class="modal-carga-footer">
+        <div class="total-bultos">
+          <span class="total-bultos-label">Total Bultos:</span>
+          <span class="total-bultos-numero" id="totalBultos">0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border-width: 0;
+    }
+  </style>
+  
+  <audio id="audio-notificacion" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto" style="display:none;"></audio>
+</body>
+</html>

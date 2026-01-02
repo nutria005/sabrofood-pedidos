@@ -1,0 +1,9 @@
+# Redirect root to role selector
+/  /index.html  200
+
+# SPA-like behavior for subfolders
+/repartidor/*  /repartidor/index.html  200
+/local/*  /local/index.html  200
+
+# Fallback: Todas las rutas no encontradas van al index
+/*  /index.html  200
