@@ -247,22 +247,28 @@ window.addEventListener('offline', () => {
  * Solo admin@sabrofood.com puede acceder
  */
 async function verificarPermisoLocal() {
-  const { data: { user } } = await supabase_client.auth.getUser();
-  
-  if (!user) {
+  try {
+    const { data: { user } } = await supabase_client.auth.getUser();
+    
+    if (!user) {
+      window.location.href = '../index.html';
+      return false;
+    }
+    
+    // Solo admin puede acceder a Local
+    if (!ROLES_CONFIG.esAdmin(user.email)) {
+      alert('❌ No tienes permisos para acceder al panel de administración');
+      await supabaseLogout();
+      window.location.href = '../index.html';
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Error al verificar permisos:', error);
     window.location.href = '../index.html';
     return false;
   }
-  
-  // Solo admin puede acceder a Local
-  if (user.email !== 'admin@sabrofood.com') {
-    alert('❌ No tienes permisos para acceder al panel de administración');
-    await supabaseLogout();
-    window.location.href = '../index.html';
-    return false;
-  }
-  
-  return true;
 }
 
 // Inicializar estado de conexión al cargar

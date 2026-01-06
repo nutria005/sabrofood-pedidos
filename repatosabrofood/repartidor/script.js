@@ -246,24 +246,28 @@ window.addEventListener('offline', () => {
  * Admin y repartidor pueden acceder
  */
 async function verificarPermisoRepartidor() {
-  const { data: { user } } = await supabase_client.auth.getUser();
-  
-  if (!user) {
+  try {
+    const { data: { user } } = await supabase_client.auth.getUser();
+    
+    if (!user) {
+      window.location.href = '../index.html';
+      return false;
+    }
+    
+    // Admin y repartidor pueden acceder
+    if (!ROLES_CONFIG.puedeAccederPanelRepartidor(user.email)) {
+      alert('❌ No tienes permisos para acceder al panel de repartidor');
+      await supabaseLogout();
+      window.location.href = '../index.html';
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Error al verificar permisos:', error);
     window.location.href = '../index.html';
     return false;
   }
-  
-  // Admin y repartidor pueden acceder
-  const emailsAutorizados = ['admin@sabrofood.com', 'repartidor@sabrofood.com'];
-  
-  if (!emailsAutorizados.includes(user.email)) {
-    alert('❌ No tienes permisos para acceder al panel de repartidor');
-    await supabaseLogout();
-    window.location.href = '../index.html';
-    return false;
-  }
-  
-  return true;
 }
 
 // Inicializar estado de conexión al cargar

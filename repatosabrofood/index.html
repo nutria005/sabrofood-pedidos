@@ -356,6 +356,7 @@
   </div>
 
   <script src="shared/supabase-config.js"></script>
+  <script src="shared/roles-config.js"></script>
   <script>
     // === AUTENTICACIÓN CON SUPABASE ===
     let supabaseClient = null;
@@ -378,10 +379,10 @@
           // Aplicar redirección basada en roles
           const userEmail = sesionActual.user?.email;
           
-          if (userEmail === 'admin@sabrofood.com') {
+          if (ROLES_CONFIG.esAdmin(userEmail)) {
             // Admin ve pantalla de selección
             mostrarSeleccionRol();
-          } else if (userEmail === 'repartidor@sabrofood.com') {
+          } else if (ROLES_CONFIG.esRepartidor(userEmail)) {
             // Repartidor va directo a su panel
             window.location.href = './repartidor/index.html';
           } else {
@@ -419,11 +420,11 @@
             const { data: { user } } = await supabaseClient.auth.getUser();
             
             // Redirección basada en email (roles automáticos)
-            if (user.email === 'admin@sabrofood.com') {
+            if (ROLES_CONFIG.esAdmin(user.email)) {
               // Admin puede elegir - mostrar pantalla de selección
               mostrarSeleccionRol();
               
-            } else if (user.email === 'repartidor@sabrofood.com') {
+            } else if (ROLES_CONFIG.esRepartidor(user.email)) {
               // Repartidor va directo a su panel
               window.location.href = './repartidor/index.html';
               
