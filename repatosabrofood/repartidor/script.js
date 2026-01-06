@@ -281,16 +281,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('❌ Error: No se pudo inicializar Supabase');
   }
   
-  // Verificar permisos antes de continuar
-  try {
-    const tienePermiso = await verificarPermisoRepartidor();
-    if (!tienePermiso) return;
-  } catch (error) {
-    console.error('❌ Error al verificar permisos:', error);
-    alert('❌ Error al verificar permisos de acceso. Redirigiendo a login...');
-    window.location.href = '../index.html';
-    return;
-  }
+  // Verificar permisos antes de continuar (ya incluye manejo de errores interno)
+  const tienePermiso = await verificarPermisoRepartidor();
+  if (!tienePermiso) return;
   
   OfflineManager.actualizarEstadoConexion();
   OfflineManager.actualizarContadorCola();
