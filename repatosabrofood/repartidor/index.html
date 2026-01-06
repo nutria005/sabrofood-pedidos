@@ -10,6 +10,34 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../shared/supabase-config.js?v=20251217"></script>
   <script src="../shared/auth.js?v=20251217"></script>
+  <script>
+    // === PROTECCIÓN DE RUTA ===
+    // Verificar autenticación antes de cargar la página
+    (async function() {
+      // Esperar a que Supabase se inicialice
+      if (typeof window.supabase === 'undefined') {
+        await new Promise(resolve => {
+          const checkSupabase = setInterval(() => {
+            if (typeof window.supabase !== 'undefined') {
+              clearInterval(checkSupabase);
+              resolve();
+            }
+          }, 50);
+        });
+      }
+      
+      // Inicializar cliente y verificar sesión
+      inicializarSupabase();
+      const sesion = await supabaseVerificarSesion();
+      
+      if (!sesion.authenticated) {
+        console.log('⚠️ No autenticado, redirigiendo a login...');
+        window.location.href = '/repatosabrofood/index.html';
+      } else {
+        console.log('✅ Usuario autenticado:', sesion.user?.email);
+      }
+    })();
+  </script>
   <script src="script.js?v=20251217" defer></script>
 </head>
 <body>

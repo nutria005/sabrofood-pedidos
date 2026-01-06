@@ -22,3 +22,115 @@ if (typeof window !== 'undefined') {
     inicializarSupabase();
   });
 }
+
+// === FUNCIONES DE AUTENTICACIÓN ===
+
+/**
+ * Realizar login con email y password usando Supabase Auth
+ * @param {string} email - Email del usuario
+ * @param {string} password - Contraseña
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+async function supabaseLogin(email, password) {
+  try {
+    const client = inicializarSupabase();
+    if (!client) {
+      return { success: false, error: 'Cliente Supabase no inicializado' };
+    }
+
+    const { data, error } = await client.auth.signInWithPassword({
+      email: email,
+      password: password
+    });
+
+    if (error) {
+      console.error('❌ Error de login:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    if (data.session) {
+      console.log('✅ Login exitoso:', data.user.email);
+      return { success: true, user: data.user, session: data.session };
+    }
+
+    return { success: false, error: 'No se pudo crear sesión' };
+  } catch (error) {
+    console.error('❌ Error en supabaseLogin:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Cerrar sesión en Supabase
+ * @returns {Promise<{success: boolean}>}
+ */
+async function supabaseLogout() {
+  try {
+    const client = inicializarSupabase();
+    if (!client) {
+      return { success: false };
+    }
+
+    const { error } = await client.auth.signOut();
+    
+    if (error) {
+      console.error('❌ Error al cerrar sesión:', error);
+      return { success: false };
+    }
+
+    console.log('✅ Sesión cerrada exitosamente');
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Error en supabaseLogout:', error);
+    return { success: false };
+  }
+}
+
+/**
+ * Verificar si hay una sesión activa
+ * @returns {Promise<{authenticated: boolean, user?: object}>}
+ */
+async function supabaseVerificarSesion() {
+  try {
+    const client = inicializarSupabase();
+    if (!client) {
+      return { authenticated: false };
+    }
+
+    const { data: { session }, error } = await client.auth.getSession();
+    
+    if (error) {
+      console.error('❌ Error al verificar sesión:', error);
+      return { authenticated: false };
+    }
+
+    if (session && session.user) {
+      console.log('✅ Sesión activa:', session.user.email);
+      return { authenticated: true, user: session.user, session: session };
+    }
+
+    return { authenticated: false };
+  } catch (error) {
+    console.error('❌ Error en supabaseVerificarSesion:', error);
+    return { authenticated: false };
+  }
+}
+
+/**
+ * Obtener usuario actual
+ * @returns {Promise<object|null>}
+ */
+async function supabaseGetUsuarioActual() {
+  try {
+    const client = inicializarSupabase();
+    if (!client) {
+      return null;
+    }
+
+    const { data: { user } } = await client.auth.getUser();
+    return user;
+  } catch (error) {
+    console.error('❌ Error al obtener usuario:', error);
+    return null;
+  }
+}
