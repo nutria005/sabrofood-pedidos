@@ -1,5 +1,5 @@
 // === CONFIGURACIÓN ===
-// CONFIG_SEGURIDAD, hashSimple, verificarSesion y otros están en shared/auth.js
+// SUPABASE_CONFIG viene de shared/supabase-config.js
 // SUPABASE_CONFIG está en shared/supabase-config.js
 
 // === SISTEMA DE MODO OFFLINE ===
@@ -779,176 +779,24 @@ function ordenarPorRuta(pedidos) {
     return new Date(a.created_at) - new Date(b.created_at);
   });
 }
-function estaAutenticado() {
-  const sesion = localStorage.getItem(CONFIG_SEGURIDAD.sessionKey);
-  
-  if (!sesion) {
-    return false;
-  }
-  
-  try {
-    const datos = JSON.parse(sesion);
-    const ahora = new Date().getTime();
-    const tiempoTranscurrido = ahora - datos.timestamp;
-    
-    console.log('Tiempo transcurrido:', tiempoTranscurrido, 'Límite:', CONFIG_SEGURIDAD.tiempoSesion);
-    
-    // Verificar si la sesión no ha expirado
-    const valida = datos.timestamp && (tiempoTranscurrido < CONFIG_SEGURIDAD.tiempoSesion);
-    console.log('Sesión válida:', valida);
-    return valida;
-  } catch (e) {
-    return false;
-  }
-}
 
-// Guardar sesión autenticada
-function guardarSesion() {
-  const datos = {
-    authenticated: true,
-    timestamp: new Date().getTime()
-  };
-  localStorage.setItem(CONFIG_SEGURIDAD.sessionKey, JSON.stringify(datos));
-}
-function mostrarModalAuth() {
-  console.log('🚀 CREANDO MODAL ULTRA VISIBLE...');
-  
-  // Eliminar modal previo
-  const prevModal = document.getElementById('authModal');
-  if (prevModal) prevModal.remove();
-  
-  // Crear modal SÚPER VISIBLE
-  document.body.innerHTML += `
-    <div id="authModal" style="
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      background: black;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 999999;
-      font-family: Arial, sans-serif;
-    ">
-      <div style="
-        background: white;
-        padding: 48px 40px;
-        border-radius: 20px;
-        text-align: center;
-        width: 420px;
-        max-width: 90%;
-        border: 2px solid #374151;
-        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
-      ">
-                <h1 style="color: #1f2937; font-size: 28px; margin-bottom: 24px; font-weight: 600;">ACCESO REQUERIDO</h1>
-        <input type="password" id="elegantPasswordInput" placeholder="Contraseña" style="
-          width: 100%;
-          padding: 16px 20px;
-          font-size: 16px;
-          margin: 20px 0;
-          border: 2px solid #d1d5db;
-          border-radius: 12px;
-          text-align: center;
-          box-sizing: border-box;
-          background: #f9fafb;
-          color: #374151;
-          transition: all 0.2s ease;
-          outline: none;
-        ">
-        <button id="elegantLoginBtn" style="
-          width: 100%;
-          padding: 16px 24px;
-          background: linear-gradient(135deg, #4f46e5, #7c3aed);
-          color: white;
-          border: none;
-          border-radius: 12px;
-          font-size: 16px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s ease;
-        ">Iniciar Sesión</button>
-        <div id="elegantErrorMsg" style="color: #dc2626; font-size: 14px; margin-top: 16px; display: none; text-align: center;"></div>
-      </div>
-    </div>
-  `;
-  
-  // Configurar eventos
-  const input = document.getElementById('elegantPasswordInput');
-  const btn = document.getElementById('elegantLoginBtn');
-  const error = document.getElementById('elegantErrorMsg');
-  
-  function verificar() {
-    // Verificar rate limiting
-    if (!RateLimiter.canAttempt('login', CONFIG_SEGURIDAD.maxIntentos, CONFIG_SEGURIDAD.tiempoBloqueo)) {
-      error.textContent = `Demasiados intentos fallidos. Intenta nuevamente en ${Math.ceil(CONFIG_SEGURIDAD.tiempoBloqueo / 60000)} minutos.`;
-      error.style.display = 'block';
-      btn.disabled = true;
-      input.disabled = true;
-      
-      setTimeout(() => {
-        btn.disabled = false;
-        input.disabled = false;
-        error.style.display = 'none';
-      }, CONFIG_SEGURIDAD.tiempoBloqueo);
-      return;
-    }
-    
-    const inputHash = hashSimple(input.value.trim());
-    
-    if (inputHash === CONFIG_SEGURIDAD.claveHash || input.value.trim() === '0603') {
-      // Limpiar intentos fallidos
-      RateLimiter.attempts.delete('login');
-      guardarSesion();
-      document.getElementById('authModal').remove();
-      inicializarApp();
-      inicializarAppCompleta();
-    } else {
-      error.textContent = 'CONTRASEÑA INCORRECTA';
-      error.style.display = 'block';
-      input.value = '';
-      
-      // Agregar delay progresivo por seguridad
-      const intentos = RateLimiter.attempts.get('login') || [];
-      const delay = Math.min(intentos.length * 1000, 5000);
-      
-      setTimeout(() => {
-        error.style.display = 'none';
-        input.focus();
-      }, Math.max(3000, delay));
-    }
-  }
-  
-  btn.onclick = verificar;
-  input.onkeypress = (e) => { if (e.key === 'Enter') verificar(); };
-  setTimeout(() => input.focus(), 100);
-}
-
-// Función para cerrar sesión - VERSIÓN FINAL CORREGIDA
-function cerrarSesion() {
+// Función para cerrar sesión usando Supabase Auth
+async function cerrarSesion() {
   try {
     if (confirm('¿Estás seguro de que quieres cerrar la sesión?')) {
-      // Limpiar TODA la sesión y roles guardados
-      localStorage.removeItem('pedidos_auth_session');
-      localStorage.removeItem('userRole');
+      // Cerrar sesión en Supabase
+      if (typeof supabaseLogout !== 'undefined') {
+        await supabaseLogout();
+      }
       
-      // Redirigir a la raíz (selector de roles)
-      // Usando location.replace para evitar que el usuario vuelva atrás
-      window.location.replace('/index.html');
+      // Redirigir al login
+      window.location.href = '/repatosabrofood/index.html';
     }
   } catch (error) {
     console.error('Error al cerrar sesión:', error);
-    // Si falla, limpiar TODO y forzar recarga en raíz
-    localStorage.clear();
-    window.location.replace('/index.html');
+    // Si falla, forzar redirección al login
+    window.location.href = '/repatosabrofood/index.html';
   }
-}
-
-// Función de utilidad para limpiar sesión (para pruebas desde consola)
-function limpiarSesionCompleta() {
-  localStorage.removeItem(CONFIG_SEGURIDAD.sessionKey);
-  console.log('Sesión limpiada. Recarga la página para ver el modal de login.');
 }
 
 // Función para inicializar la app después de autenticación
@@ -3955,9 +3803,9 @@ function inicializarAppCompleta() {
   // Botón cerrar sesión
   const btnCerrarSesion = document.getElementById('btnCerrarSesion');
   if (btnCerrarSesion) {
-    btnCerrarSesion.onclick = () => {
-      localStorage.removeItem(CONFIG_SEGURIDAD.sessionKey);
-      window.location.href = '../index-NEW.html';
+    btnCerrarSesion.onclick = async (e) => {
+      e.preventDefault();
+      await cerrarSesion();
     };
   }
   
@@ -3992,15 +3840,11 @@ function inicializarAppCompleta() {
 
 // Event listeners para búsqueda y filtros
 document.addEventListener('DOMContentLoaded', function() {
-  // Verificar autenticación
-  if (!estaAutenticado()) {
-    setTimeout(() => {
-      mostrarModalAuth();
-    }, 200);
-    return;
-  }
+  // La autenticación ya está verificada en el HTML (route protection)
+  // Si llegamos aquí, el usuario está autenticado
+  console.log('✅ Usuario autenticado - Inicializando aplicación...');
   
-  // Si está autenticado, inicializar la aplicación
+  // Inicializar la aplicación
   inicializarApp();
   inicializarAppCompleta();
 });

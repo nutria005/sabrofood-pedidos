@@ -6,6 +6,7 @@
   <meta name="description" content="Sistema de gestión de pedidos - Selector de Rol">
   <meta name="theme-color" content="#4b6cb7">
   <title>Sistema de Pedidos | Bienvenida</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
     
@@ -281,14 +282,24 @@
   <div class="container">
     <div class="login-screen" id="loginScreen">
       <h1>🐶 Sistema de Pedidos</h1>
-      <p>Ingresa la clave para acceder al sistema</p>
+      <p>Ingresa tus credenciales para acceder</p>
       
       <form class="login-form" id="loginForm">
         <div class="input-group">
           <input 
+            type="email" 
+            id="emailInput" 
+            placeholder="Email" 
+            autocomplete="email"
+            required
+          />
+        </div>
+        
+        <div class="input-group">
+          <input 
             type="password" 
             id="passwordInput" 
-            placeholder="Clave de acceso" 
+            placeholder="Contraseña" 
             autocomplete="current-password"
             required
           />
@@ -344,73 +355,67 @@
     </div>
   </div>
 
+  <script src="shared/supabase-config.js"></script>
   <script>
-    // === AUTENTICACIÓN SIMPLIFICADA ===
-    const CONFIG_SEGURIDAD = {
-      claveHash: "b9c950640e1ac86b3aa0a7b5d0f6b5ad",
-      sessionKey: "pedidos_auth_session",
-      tiempoSesion: 24 * 60 * 60 * 1000
-    };
+    // === AUTENTICACIÓN CON SUPABASE ===
+    let supabaseClient = null;
 
-    function hashSimple(str) {
-      let hash = 0;
-      if (str.length === 0) return hash;
-      for (let i = 0; i < str.length; i++) {
-        const char = str.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash;
+    // Inicializar cliente Supabase
+    window.addEventListener('DOMContentLoaded', async () => {
+      supabaseClient = inicializarSupabase();
+      
+      if (!supabaseClient) {
+        console.error('❌ No se pudo inicializar Supabase');
+        document.getElementById('errorMessage').textContent = '⚠️ Error de configuración. Por favor, recarga la página.';
+        document.getElementById('errorMessage').style.display = 'block';
+        return;
       }
-      return Math.abs(hash).toString(16);
-    }
 
-    function verificarSesion() {
-      const sesionStr = localStorage.getItem(CONFIG_SEGURIDAD.sessionKey);
-      if (!sesionStr) return false;
+      // Verificar si ya hay una sesión activa
       try {
-        const sesion = JSON.parse(sesionStr);
-        const ahora = Date.now();
-        return (ahora - sesion.timestamp) < CONFIG_SEGURIDAD.tiempoSesion;
-      } catch {
-        return false;
-      }
-    }
-
-    function guardarSesion() {
-      const sesion = {
-        timestamp: Date.now(),
-        autenticado: true
-      };
-      localStorage.setItem(CONFIG_SEGURIDAD.sessionKey, JSON.stringify(sesion));
-    }
-
-    function cerrarSesion() {
-      localStorage.removeItem(CONFIG_SEGURIDAD.sessionKey);
-      window.location.reload();
-    }
-
-    // Verificar sesión al cargar
-    window.addEventListener('DOMContentLoaded', () => {
-      if (verificarSesion()) {
-        mostrarSeleccionRol();
+        const sesionActual = await supabaseVerificarSesion();
+        if (sesionActual.authenticated) {
+          mostrarSeleccionRol();
+        }
+      } catch (error) {
+        console.error('❌ Error al verificar sesión:', error);
+        // No mostrar error al usuario, simplemente mostrar login
       }
     });
 
     // Manejar login
-    document.getElementById('loginForm').addEventListener('submit', (e) => {
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const email = document.getElementById('emailInput').value;
       const password = document.getElementById('passwordInput').value;
       const errorMsg = document.getElementById('errorMessage');
+      const btnLogin = e.target.querySelector('.btn-login');
       
-      // Validar contraseña (comparando con el hash MD5 de "0603")
-      if (hashSimple(password) === CONFIG_SEGURIDAD.claveHash || password === '0603') {
-        guardarSesion();
-        errorMsg.style.display = 'none';
-        mostrarSeleccionRol();
-      } else {
-        errorMsg.textContent = '❌ Clave incorrecta';
+      // Deshabilitar botón durante el login
+      btnLogin.disabled = true;
+      btnLogin.textContent = '⏳ Ingresando...';
+      
+      try {
+        const resultado = await supabaseLogin(email, password);
+        
+        if (resultado.success) {
+          errorMsg.style.display = 'none';
+          mostrarSeleccionRol();
+        } else {
+          errorMsg.textContent = '❌ Email o contraseña incorrectos';
+          errorMsg.style.display = 'block';
+          // Solo limpiar contraseña, mantener email para mejor UX
+          document.getElementById('passwordInput').value = '';
+          document.getElementById('passwordInput').focus();
+        }
+      } catch (error) {
+        errorMsg.textContent = '❌ Error al iniciar sesión';
         errorMsg.style.display = 'block';
+        // Limpiar solo contraseña en caso de error
         document.getElementById('passwordInput').value = '';
-        document.getElementById('passwordInput').focus();
+      } finally {
+        btnLogin.disabled = false;
+        btnLogin.textContent = '🔓 Ingresar';
       }
     });
 
@@ -430,9 +435,10 @@
     }
 
     // Cerrar sesión completa
-    function cerrarSesionCompleta() {
+    async function cerrarSesionCompleta() {
       if (confirm('¿Seguro que deseas cerrar sesión?')) {
-        cerrarSesion();
+        await supabaseLogout();
+        window.location.reload();
       }
     }
   </script>
