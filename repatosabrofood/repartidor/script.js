@@ -240,8 +240,34 @@ window.addEventListener('offline', () => {
   ErrorHandler.mostrarWarning('⚠️ Sin conexión. Las acciones se guardarán localmente.');
 });
 
+// === VERIFICACIÓN DE PERMISOS ===
+/**
+ * Verificar que el usuario tenga permisos para acceder al panel de repartidor
+ * Admin y repartidor pueden acceder
+ */
+async function verificarPermisoRepartidor() {
+  const { data: { user } } = await supabase_client.auth.getUser();
+  
+  if (!user) {
+    window.location.href = '../index.html';
+    return false;
+  }
+  
+  // Admin y repartidor pueden acceder
+  const emailsAutorizados = ['admin@sabrofood.com', 'repartidor@sabrofood.com'];
+  
+  if (!emailsAutorizados.includes(user.email)) {
+    alert('❌ No tienes permisos para acceder al panel de repartidor');
+    await supabaseLogout();
+    window.location.href = '../index.html';
+    return false;
+  }
+  
+  return true;
+}
+
 // Inicializar estado de conexión al cargar
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // Inicializar Supabase client desde shared config
   supabase_client = inicializarSupabase();
   
@@ -250,6 +276,10 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     console.error('❌ Error: No se pudo inicializar Supabase');
   }
+  
+  // Verificar permisos antes de continuar
+  const tienePermiso = await verificarPermisoRepartidor();
+  if (!tienePermiso) return;
   
   OfflineManager.actualizarEstadoConexion();
   OfflineManager.actualizarContadorCola();

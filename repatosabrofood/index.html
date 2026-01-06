@@ -375,7 +375,20 @@
       try {
         const sesionActual = await supabaseVerificarSesion();
         if (sesionActual.authenticated) {
-          mostrarSeleccionRol();
+          // Aplicar redirección basada en roles
+          const userEmail = sesionActual.user?.email;
+          
+          if (userEmail === 'admin@sabrofood.com') {
+            // Admin ve pantalla de selección
+            mostrarSeleccionRol();
+          } else if (userEmail === 'repartidor@sabrofood.com') {
+            // Repartidor va directo a su panel
+            window.location.href = './repartidor/index.html';
+          } else {
+            // Usuario no autorizado - cerrar sesión
+            console.warn('⚠️ Usuario no autorizado:', userEmail);
+            await supabaseLogout();
+          }
         }
       } catch (error) {
         console.error('❌ Error al verificar sesión:', error);
@@ -400,7 +413,27 @@
         
         if (resultado.success) {
           errorMsg.style.display = 'none';
-          mostrarSeleccionRol();
+          
+          // Obtener información del usuario autenticado
+          const { data: { user } } = await supabaseClient.auth.getUser();
+          
+          // Redirección basada en email (roles automáticos)
+          if (user.email === 'admin@sabrofood.com') {
+            // Admin puede elegir - mostrar pantalla de selección
+            mostrarSeleccionRol();
+            
+          } else if (user.email === 'repartidor@sabrofood.com') {
+            // Repartidor va directo a su panel
+            window.location.href = './repartidor/index.html';
+            
+          } else {
+            // Email no autorizado
+            alert('❌ Usuario no autorizado para acceder al sistema');
+            await supabaseLogout();
+            // Limpiar formulario
+            document.getElementById('emailInput').value = '';
+            document.getElementById('passwordInput').value = '';
+          }
         } else {
           errorMsg.textContent = '❌ Email o contraseña incorrectos';
           errorMsg.style.display = 'block';

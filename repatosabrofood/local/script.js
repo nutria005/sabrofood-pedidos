@@ -241,8 +241,32 @@ window.addEventListener('offline', () => {
   ErrorHandler.mostrarWarning('⚠️ Sin conexión. Las acciones se guardarán localmente.');
 });
 
+// === VERIFICACIÓN DE PERMISOS ===
+/**
+ * Verificar que el usuario tenga permisos para acceder al panel de administración (Local)
+ * Solo admin@sabrofood.com puede acceder
+ */
+async function verificarPermisoLocal() {
+  const { data: { user } } = await supabase_client.auth.getUser();
+  
+  if (!user) {
+    window.location.href = '../index.html';
+    return false;
+  }
+  
+  // Solo admin puede acceder a Local
+  if (user.email !== 'admin@sabrofood.com') {
+    alert('❌ No tienes permisos para acceder al panel de administración');
+    await supabaseLogout();
+    window.location.href = '../index.html';
+    return false;
+  }
+  
+  return true;
+}
+
 // Inicializar estado de conexión al cargar
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // Inicializar Supabase client desde shared config
   supabase_client = inicializarSupabase();
   
@@ -251,6 +275,10 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     console.error('❌ Error: No se pudo inicializar Supabase');
   }
+  
+  // Verificar permisos antes de continuar
+  const tienePermiso = await verificarPermisoLocal();
+  if (!tienePermiso) return;
   
   OfflineManager.actualizarEstadoConexion();
   OfflineManager.actualizarContadorCola();
