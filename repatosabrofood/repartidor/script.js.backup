@@ -1,6 +1,6 @@
 // === CONFIGURACIÓN ===
-// SUPABASE_CONFIG viene de shared/supabase-config.js
-// SUPABASE_CONFIG viene de shared/supabase-config.js
+// CONFIG_SEGURIDAD, hashSimple, verificarSesion y otros están en shared/auth.js
+// SUPABASE_CONFIG está en shared/supabase-config.js
 
 // === SISTEMA DE MODO OFFLINE ===
 const OfflineManager = {
@@ -82,44 +82,43 @@ const OfflineManager = {
   async ejecutarAccion(accion) {
     const { tipo, datos } = accion;
     
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente de Supabase no disponible para queue');
+      return;
+    }
+    
     switch(tipo) {
       case 'ENTREGAR':
-        await supabase_client.from('pedidos').update({ entregado: true }).eq('id', datos.id);
+        await client.from('pedidos').update({ entregado: true }).eq('id', datos.id);
         break;
         
       case 'DESMARCAR':
-        await supabase_client.from('pedidos').update({ entregado: false }).eq('id', datos.id);
+        await client.from('pedidos').update({ entregado: false }).eq('id', datos.id);
         break;
         
       case 'ELIMINAR':
-        await supabase_client.from('pedidos').delete().eq('id', datos.id);
+        await client.from('pedidos').delete().eq('id', datos.id);
         break;
         
       case 'ANULAR':
-        await supabase_client.from('pedidos').update({ entregado: true, estado: 'ANULADO' }).eq('id', datos.id);
+        await client.from('pedidos').update({ entregado: true, estado: 'ANULADO' }).eq('id', datos.id);
         break;
         
       case 'REACTIVAR':
-        await supabase_client.from('pedidos').update({ entregado: false, estado: null }).eq('id', datos.id);
+        await client.from('pedidos').update({ entregado: false, estado: null }).eq('id', datos.id);
         break;
         
       case 'REAGENDAR':
-        await supabase_client.from('pedidos').update({ fecha: datos.fecha }).eq('id', datos.id);
+        await client.from('pedidos').update({ fecha: datos.fecha }).eq('id', datos.id);
         break;
         
       case 'CAMBIAR_PRIORIDAD':
-        await supabase_client.from('pedidos').update({ prioridad: datos.prioridad }).eq('id', datos.id);
+        await client.from('pedidos').update({ prioridad: datos.prioridad }).eq('id', datos.id);
         break;
         
       case 'ACTUALIZAR_ORDEN':
-        await supabase_client.from('pedidos').update({ orden_ruta: datos.orden }).eq('id', datos.id);
-        break;
-        
-      case 'PAGO_MIXTO_PAGADO':
-        await supabase_client.from('pedidos').update({ 
-          metodo_pago: datos.metodo_pago,
-          notas: datos.notas
-        }).eq('id', datos.id);
+        await client.from('pedidos').update({ orden_ruta: datos.orden }).eq('id', datos.id);
         break;
         
       default:
@@ -247,7 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
   supabase_client = inicializarSupabase();
   
   if (supabase_client) {
-    console.log('✅ Cliente Supabase inicializado en LOCAL');
+    console.log('✅ Cliente Supabase inicializado en REPARTIDOR');
   } else {
     console.error('❌ Error: No se pudo inicializar Supabase');
   }
@@ -549,8 +548,15 @@ async function cambiarPrioridad(docId, nuevaPrioridad) {
   }
   
   try {
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible');
+      ErrorHandler.mostrarError('Error: No se pudo conectar');
+      return;
+    }
+    
     // Intentar actualizar en Supabase
-    const { error } = await supabase_client
+    const { error } = await client
       .from('pedidos')
       .update({ prioridad: nuevaPrioridad })
       .eq('id', docId);
@@ -607,9 +613,16 @@ async function actualizarOrdenEntrega(docId, nuevoOrden) {
   }
   
   try {
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible');
+      ErrorHandler.mostrarError('Error: No se pudo conectar');
+      return;
+    }
+    
     // Intentar actualizar en Supabase
     try {
-      const { error } = await supabase_client
+      const { error } = await client
         .from('pedidos')
         .update({ orden_ruta: nuevoOrden })
         .eq('id', docId);
@@ -693,14 +706,20 @@ async function moverPedido(docId, direccion) {
     const ordenActual = pedidoActual.orden_ruta || indiceActual;
     const ordenDestino = pedidoDestino.orden_ruta || nuevoIndice;
     
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible');
+      return;
+    }
+    
     // Intentar actualizar en Supabase
     try {
-      await supabase_client
+      await client
         .from('pedidos')
         .update({ orden_ruta: ordenDestino })
         .eq('id', docId);
         
-      await supabase_client
+      await client
         .from('pedidos')
         .update({ orden_ruta: ordenActual })
         .eq('id', pedidoDestino.id);
@@ -760,24 +779,176 @@ function ordenarPorRuta(pedidos) {
     return new Date(a.created_at) - new Date(b.created_at);
   });
 }
+function estaAutenticado() {
+  const sesion = localStorage.getItem(CONFIG_SEGURIDAD.sessionKey);
+  
+  if (!sesion) {
+    return false;
+  }
+  
+  try {
+    const datos = JSON.parse(sesion);
+    const ahora = new Date().getTime();
+    const tiempoTranscurrido = ahora - datos.timestamp;
+    
+    console.log('Tiempo transcurrido:', tiempoTranscurrido, 'Límite:', CONFIG_SEGURIDAD.tiempoSesion);
+    
+    // Verificar si la sesión no ha expirado
+    const valida = datos.timestamp && (tiempoTranscurrido < CONFIG_SEGURIDAD.tiempoSesion);
+    console.log('Sesión válida:', valida);
+    return valida;
+  } catch (e) {
+    return false;
+  }
+}
 
-// Función para cerrar sesión usando Supabase Auth
-async function cerrarSesion() {
+// Guardar sesión autenticada
+function guardarSesion() {
+  const datos = {
+    authenticated: true,
+    timestamp: new Date().getTime()
+  };
+  localStorage.setItem(CONFIG_SEGURIDAD.sessionKey, JSON.stringify(datos));
+}
+function mostrarModalAuth() {
+  console.log('🚀 CREANDO MODAL ULTRA VISIBLE...');
+  
+  // Eliminar modal previo
+  const prevModal = document.getElementById('authModal');
+  if (prevModal) prevModal.remove();
+  
+  // Crear modal SÚPER VISIBLE
+  document.body.innerHTML += `
+    <div id="authModal" style="
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: black;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999999;
+      font-family: Arial, sans-serif;
+    ">
+      <div style="
+        background: white;
+        padding: 48px 40px;
+        border-radius: 20px;
+        text-align: center;
+        width: 420px;
+        max-width: 90%;
+        border: 2px solid #374151;
+        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+      ">
+                <h1 style="color: #1f2937; font-size: 28px; margin-bottom: 24px; font-weight: 600;">ACCESO REQUERIDO</h1>
+        <input type="password" id="elegantPasswordInput" placeholder="Contraseña" style="
+          width: 100%;
+          padding: 16px 20px;
+          font-size: 16px;
+          margin: 20px 0;
+          border: 2px solid #d1d5db;
+          border-radius: 12px;
+          text-align: center;
+          box-sizing: border-box;
+          background: #f9fafb;
+          color: #374151;
+          transition: all 0.2s ease;
+          outline: none;
+        ">
+        <button id="elegantLoginBtn" style="
+          width: 100%;
+          padding: 16px 24px;
+          background: linear-gradient(135deg, #4f46e5, #7c3aed);
+          color: white;
+          border: none;
+          border-radius: 12px;
+          font-size: 16px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        ">Iniciar Sesión</button>
+        <div id="elegantErrorMsg" style="color: #dc2626; font-size: 14px; margin-top: 16px; display: none; text-align: center;"></div>
+      </div>
+    </div>
+  `;
+  
+  // Configurar eventos
+  const input = document.getElementById('elegantPasswordInput');
+  const btn = document.getElementById('elegantLoginBtn');
+  const error = document.getElementById('elegantErrorMsg');
+  
+  function verificar() {
+    // Verificar rate limiting
+    if (!RateLimiter.canAttempt('login', CONFIG_SEGURIDAD.maxIntentos, CONFIG_SEGURIDAD.tiempoBloqueo)) {
+      error.textContent = `Demasiados intentos fallidos. Intenta nuevamente en ${Math.ceil(CONFIG_SEGURIDAD.tiempoBloqueo / 60000)} minutos.`;
+      error.style.display = 'block';
+      btn.disabled = true;
+      input.disabled = true;
+      
+      setTimeout(() => {
+        btn.disabled = false;
+        input.disabled = false;
+        error.style.display = 'none';
+      }, CONFIG_SEGURIDAD.tiempoBloqueo);
+      return;
+    }
+    
+    const inputHash = hashSimple(input.value.trim());
+    
+    if (inputHash === CONFIG_SEGURIDAD.claveHash || input.value.trim() === '0603') {
+      // Limpiar intentos fallidos
+      RateLimiter.attempts.delete('login');
+      guardarSesion();
+      document.getElementById('authModal').remove();
+      inicializarApp();
+      inicializarAppCompleta();
+    } else {
+      error.textContent = 'CONTRASEÑA INCORRECTA';
+      error.style.display = 'block';
+      input.value = '';
+      
+      // Agregar delay progresivo por seguridad
+      const intentos = RateLimiter.attempts.get('login') || [];
+      const delay = Math.min(intentos.length * 1000, 5000);
+      
+      setTimeout(() => {
+        error.style.display = 'none';
+        input.focus();
+      }, Math.max(3000, delay));
+    }
+  }
+  
+  btn.onclick = verificar;
+  input.onkeypress = (e) => { if (e.key === 'Enter') verificar(); };
+  setTimeout(() => input.focus(), 100);
+}
+
+// Función para cerrar sesión - VERSIÓN FINAL CORREGIDA
+function cerrarSesion() {
   try {
     if (confirm('¿Estás seguro de que quieres cerrar la sesión?')) {
-      // Cerrar sesión en Supabase
-      if (typeof supabaseLogout !== 'undefined') {
-        await supabaseLogout();
-      }
+      // Limpiar TODA la sesión y roles guardados
+      localStorage.removeItem('pedidos_auth_session');
+      localStorage.removeItem('userRole');
       
-      // Redirigir al login
-      window.location.href = '/repatosabrofood/index.html';
+      // Redirigir a la raíz (selector de roles)
+      // Usando location.replace para evitar que el usuario vuelva atrás
+      window.location.replace('/index.html');
     }
   } catch (error) {
     console.error('Error al cerrar sesión:', error);
-    // Si falla, forzar redirección al login
-    window.location.href = '/repatosabrofood/index.html';
+    // Si falla, limpiar TODO y forzar recarga en raíz
+    localStorage.clear();
+    window.location.replace('/index.html');
   }
+}
+
+// Función de utilidad para limpiar sesión (para pruebas desde consola)
+function limpiarSesionCompleta() {
+  localStorage.removeItem(CONFIG_SEGURIDAD.sessionKey);
+  console.log('Sesión limpiada. Recarga la página para ver el modal de login.');
 }
 
 // Función para inicializar la app después de autenticación
@@ -789,17 +960,26 @@ function inicializarApp() {
 
 // === INICIALIZACIÓN SUPABASE ===
 // Supabase se inicializa desde shared/supabase-config.js
+// Esperamos a que se cargue el cliente compartido
 let supabase_client = null;
 
+// Función para obtener el cliente de Supabase
+function getSupabaseClient() {
+  if (!supabase_client) {
+    supabase_client = inicializarSupabase();
+  }
+  return supabase_client;
+}
+
 let datosLocal = [];
+let todosPedidosDelChofer = []; // Todos los pedidos del chofer (incluyendo entregados) para calcular resumen
 let datosFiltrados = []; // Pedidos actualmente visibles después de aplicar filtros
 const METODOS = { 
   'E': 'Efectivo', 
   'DC': 'Débito/Crédito', 
   'TP': 'Transf. Pendiente', 
   'TG': 'Transf. Pagada',
-  'PM': 'Pago Mixto (Pendiente)',
-  'PMP': 'Pago Mixto (Pagado)'
+  'P': 'Pagado'
 };
 let lineasPedido = [];
 
@@ -978,8 +1158,14 @@ function mostrarToastNuevoPedido(mensaje) {
   });
 }
 function activarTiempoReal() {
+  const client = getSupabaseClient();
+  if (!client) {
+    console.error('❌ Cliente no disponible para realtime');
+    return;
+  }
+  
   // Crear canal de Supabase con un nombre único
-  const channel = supabase_client
+  const channel = client
     .channel('realtime:public:pedidos')
     .on(
       'postgres_changes',
@@ -1035,7 +1221,13 @@ function activarTiempoReal() {
   window.realtimeChannel = channel;
 }
 function activarTiempoRealCarga() {
-  const channelCarga = supabase_client
+  const client = getSupabaseClient();
+  if (!client) {
+    console.error('❌ Cliente no disponible para realtime carga');
+    return;
+  }
+  
+  const channelCarga = client
     .channel('realtime:public:carga_marcados')
     .on(
       'postgres_changes',
@@ -1214,13 +1406,32 @@ function notificarNuevoPedido(pedido) {
 async function cargarPedidos() {
   const [statusEl, resultadosEl] = getElements('status', 'resultados');
   
+  // FILTRO DE CHOFER: Obtener el chofer seleccionado PRIMERO (antes de cualquier conexión)
+  const selectorChofer = document.getElementById('selectorChofer');
+  const choferSeleccionado = selectorChofer ? selectorChofer.value : '';
+  
+  // Si no hay chofer seleccionado, mostrar mensaje SIN intentar conectar
+  if (!choferSeleccionado) {
+    statusEl.innerText = 'Estado: Selecciona tu nombre arriba';
+    resultadosEl.innerHTML = '<div class="item" style="text-align:center;padding:40px 20px;color:#6b7280;"><h3 style="font-size:24px;margin-bottom:12px;">👋 Bienvenido</h3><p>Por favor, selecciona tu nombre en el menú desplegable de arriba para ver tus pedidos asignados del día.</p></div>';
+    return;
+  }
+  
   statusEl.innerText = 'Estado: Conectando...';
   
   try {
     // 🔥 PRIORIDAD #1: SIEMPRE INTENTAR SUPABASE PRIMERO
     console.log('🔥 BAJANDO DATOS FRESCOS DE SUPABASE...');
     
-    const { data, error } = await supabase_client.from('pedidos').select('*').order('created_at', { ascending: false });
+    // Obtener cliente de Supabase
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente de Supabase no disponible');
+      statusEl.innerText = 'Error: No se pudo conectar';
+      return;
+    }
+    
+    const { data, error} = await client.from('pedidos').select('*').order('created_at', { ascending: false });
     
     if(error) {
       console.error('❌ Error de Supabase:', error);
@@ -1231,6 +1442,15 @@ async function cargarPedidos() {
       if (cachedData && cachedData.length > 0) {
         statusEl.innerText = '⚠️ Error de conexión - Usando cache de emergencia';
         datosLocal = cachedData;
+        
+        // FILTRAR POR CHOFER en los datos del cache
+        datosLocal = datosLocal.filter(p => p.asignado_a === choferSeleccionado && !p.entregado);
+        
+        if (datosLocal.length === 0) {
+          resultadosEl.innerHTML = '<div class="item" style="text-align:center;padding:40px 20px;color:#6b7280;"><h3 style="font-size:20px;margin-bottom:12px;">📦 Sin ruta asignada</h3><p>No tienes pedidos asignados hoy.</p></div>';
+          return;
+        }
+        
         render(datosLocal);
         updateResultCount(datosLocal.length || 0, '');
         actualizarResumenCaja(datosLocal);
@@ -1248,14 +1468,60 @@ async function cargarPedidos() {
     statusEl.innerText = 'Estado: Conectado a Supabase';
     datosLocal = data || [];
     
-    // Guardar en cache para uso offline
-    OfflineManager.guardarCache(datosLocal);
+    console.log('='.repeat(60));
+    console.log('✅ CONECTADO A SUPABASE EXITOSAMENTE');
+    console.log('📊 Total de pedidos obtenidos:', datosLocal.length);
+    console.log('🚚 Filtrando por chofer:', choferSeleccionado);
+    console.log('='.repeat(60));
+    
+    // FILTRAR POR CHOFER: Obtener TODOS los pedidos del día del chofer (entregados y no entregados)
+    todosPedidosDelChofer = datosLocal.filter(pedido => {
+      const asignadoA = pedido.asignado_a || null;
+      return asignadoA === choferSeleccionado;
+    });
+    
+    // Separar pedidos pendientes y entregados
+    const pedidosPendientes = todosPedidosDelChofer.filter(p => !p.entregado);
+    const pedidosEntregados = todosPedidosDelChofer.filter(p => p.entregado);
+    
+    console.log(`✅ Total pedidos del chofer: ${todosPedidosDelChofer.length} (${pedidosPendientes.length} pendientes, ${pedidosEntregados.length} entregados)`);
+    
+    // Actualizar datosLocal con solo los pendientes para mostrar
+    datosLocal = pedidosPendientes;
+    
+    // Mostrar mensaje si no hay pedidos asignados
+    if (datosLocal.length === 0 && pedidosEntregados.length === 0) {
+      resultadosEl.innerHTML = '<div class="item" style="text-align:center;padding:40px 20px;color:#6b7280;"><h3 style="font-size:20px;margin-bottom:12px;">📦 Sin ruta asignada</h3><p>No tienes pedidos asignados para hoy.</p></div>';
+      updateResultCount(0, '');
+      
+      // Ocultar sección de entregados
+      const seccionEntregados = document.getElementById('seccionEntregados');
+      if (seccionEntregados) seccionEntregados.style.display = 'none';
+      
+      // Filtrar pedidos para resumen según filtro activo
+      let pedidosParaResumen = todosPedidosDelChofer;
+      if (filtroActual === 'hoy') {
+        const fechaHoy = getFechaFormateada(new Date());
+        pedidosParaResumen = todosPedidosDelChofer.filter(p => p.fecha === fechaHoy);
+      } else if (filtroActual === 'manana') {
+        const fechaManana = getFechaManana();
+        pedidosParaResumen = todosPedidosDelChofer.filter(p => p.fecha === fechaManana);
+      } else if (filtroActual === 'mes') {
+        pedidosParaResumen = todosPedidosDelChofer.filter(p => esMesActual(p.fecha));
+      }
+      
+      actualizarResumenCaja(pedidosParaResumen);
+      return;
+    }
+    
+    // Guardar en cache para uso offline (guardar todos del chofer para el resumen)
+    OfflineManager.guardarCache(todosPedidosDelChofer);
   
     // Cargar prioridades y órdenes desde localStorage (temporal)
     const prioridadesLocal = JSON.parse(localStorage.getItem('pedidos_prioridades') || '{}');
     const ordenesLocal = JSON.parse(localStorage.getItem('pedidos_ordenes') || '{}');
     
-    // Aplicar datos de localStorage a los pedidos
+    // Aplicar datos de localStorage a los pedidos pendientes
     datosLocal = datosLocal.map(pedido => ({
       ...pedido,
       prioridad: prioridadesLocal[pedido.id] || pedido.prioridad || 'C',
@@ -1268,7 +1534,33 @@ async function cargarPedidos() {
     } else {
       render(datosLocal);
       updateResultCount(datosLocal.length || 0, '');
-      actualizarResumenCaja(datosLocal);
+      
+      // Renderizar pedidos entregados en su sección (filtrados por el filtro actual)
+      let pedidosEntregadosParaMostrar = pedidosEntregados;
+      if (filtroActual === 'hoy') {
+        const fechaHoy = getFechaFormateada(new Date());
+        pedidosEntregadosParaMostrar = pedidosEntregados.filter(p => p.fecha === fechaHoy);
+      } else if (filtroActual === 'manana') {
+        const fechaManana = getFechaManana();
+        pedidosEntregadosParaMostrar = pedidosEntregados.filter(p => p.fecha === fechaManana);
+      } else if (filtroActual === 'mes') {
+        pedidosEntregadosParaMostrar = pedidosEntregados.filter(p => esMesActual(p.fecha));
+      }
+      renderizarPedidosEntregados(pedidosEntregadosParaMostrar);
+      
+      // Filtrar pedidos para resumen según filtro activo
+      let pedidosParaResumen = todosPedidosDelChofer;
+      if (filtroActual === 'hoy') {
+        const fechaHoy = getFechaFormateada(new Date());
+        pedidosParaResumen = todosPedidosDelChofer.filter(p => p.fecha === fechaHoy);
+      } else if (filtroActual === 'manana') {
+        const fechaManana = getFechaManana();
+        pedidosParaResumen = todosPedidosDelChofer.filter(p => p.fecha === fechaManana);
+      } else if (filtroActual === 'mes') {
+        pedidosParaResumen = todosPedidosDelChofer.filter(p => esMesActual(p.fecha));
+      }
+      
+      actualizarResumenCaja(pedidosParaResumen);
     }
   } catch (err) {
     console.error('🚨 Error inesperado en cargarPedidos:', err);
@@ -1299,8 +1591,8 @@ async function guardarPedido() {
   }
 
   try {
-    const [nombreEl, direccionEl, telefonoEl, fechaEl, metodoEl, notasEl, rutaEl, asignadoEl] = 
-      getElements('nombre', 'direccion', 'telefono', 'fechaEntrega', 'metodoPago', 'notas', 'rutaSelect', 'asignadoA');
+    const [nombreEl, direccionEl, telefonoEl, fechaEl, metodoEl, notasEl, rutaEl] = 
+      getElements('nombre', 'direccion', 'telefono', 'fechaEntrega', 'metodoPago', 'notas', 'rutaSelect');
     
     // Validar todos los campos
     const validaciones = {
@@ -1313,16 +1605,7 @@ async function guardarPedido() {
 
     // Verificar si hay productos
     if (lineasPedido.length === 0) {
-      ErrorHandler.mostrarError('⚠️ Debe agregar al menos un producto al pedido');
-      return;
-    }
-
-    // Calcular total del pedido
-    const totalPedido = lineasPedido.reduce((acc, p) => acc + (p.cantidad * p.precio), 0);
-    
-    // Verificar que el total no sea $0
-    if (totalPedido === 0) {
-      ErrorHandler.mostrarError('⚠️ El total del pedido no puede ser $0. Verifica los precios de los productos.');
+      ErrorHandler.mostrarError('Debe agregar al menos un producto al pedido');
       return;
     }
 
@@ -1352,7 +1635,6 @@ async function guardarPedido() {
       entregado: false,
       prioridad: rutaEl.value || 'C', // Prioridad desde selector de ruta (por defecto C)
       orden_ruta: Math.floor(Date.now() / 1000), // Timestamp en segundos (más pequeño)
-      asignado_a: asignadoEl?.value || null, // Asignación de chofer (null si no está asignado)
       created_at: new Date().toISOString(),
       items: lineasPedido.map(item => ({
         nombre: Validator.sanitizeHTML(item.nombre),
@@ -1367,7 +1649,16 @@ async function guardarPedido() {
     btnAgregar.textContent = 'Guardando...';
     btnAgregar.disabled = true;
 
-    const { data, error } = await supabase_client.from('pedidos').insert([pedido]);
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible');
+      ErrorHandler.mostrarError('Error: No se pudo conectar');
+      btnAgregar.textContent = textoOriginal;
+      btnAgregar.disabled = false;
+      return;
+    }
+
+    const { data, error } = await client.from('pedidos').insert([pedido]);
     
     if (error) {
       console.error('Error de Supabase detallado:', error);
@@ -1431,8 +1722,15 @@ async function eliminarPedido(docId, btnElement = null) {
   }
 
   try {
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible');
+      ErrorHandler.mostrarError('Error: No se pudo conectar');
+      return;
+    }
+    
     // Paso 2: Llamada a Supabase
-    const { error } = await supabase_client.from('pedidos').delete().eq('id', docId);
+    const { error } = await client.from('pedidos').delete().eq('id', docId);
     
     // Paso 3: Manejo de error
     if (error) {
@@ -1499,8 +1797,15 @@ async function anularPedido(docId, btnElement = null) {
   }
 
   try {
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible');
+      ErrorHandler.mostrarError('Error: No se pudo conectar');
+      return;
+    }
+    
     // Actualizar pedido en Supabase
-    const { error } = await supabase_client
+    const { error } = await client
       .from('pedidos')
       .update({ 
         entregado: true,
@@ -1528,90 +1833,6 @@ async function anularPedido(docId, btnElement = null) {
       btnElement.style.opacity = '1';
     }
   }
-}
-
-/**
- * Asignar pedido a un repartidor
- * @param {string} docId - ID del pedido a asignar
- */
-async function asignarRepartidor(docId) {
-  // Obtener pedido actual para mostrar info
-  const pedido = datosLocal.find(p => p.id === docId);
-  if (!pedido) {
-    ErrorHandler.mostrarError('No se encontró el pedido');
-    return;
-  }
-
-  // Crear modal de selección
-  const asignadoActual = pedido.asignado_a || 'Sin asignar';
-  const opciones = `
-    <div style="background:white;padding:24px;border-radius:12px;max-width:400px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">
-      <h3 style="margin:0 0 16px 0;font-size:20px;color:#1f2937;">🚚 Asignar Repartidor</h3>
-      <p style="margin:0 0 16px 0;color:#6b7280;font-size:14px;">
-        <strong>Pedido:</strong> ${pedido.nombre}<br>
-        <strong>Actual:</strong> ${asignadoActual}
-      </p>
-      <div style="display:flex;flex-direction:column;gap:12px;">
-        <button class="btn-asignar-repartidor" data-repartidor="repartidor_1" style="background:#3b82f6;color:white;border:none;padding:12px;border-radius:8px;font-size:16px;cursor:pointer;font-weight:600;">
-          🚚 Repartidor 1
-        </button>
-        <button class="btn-asignar-repartidor" data-repartidor="repartidor_2" style="background:#10b981;color:white;border:none;padding:12px;border-radius:8px;font-size:16px;cursor:pointer;font-weight:600;">
-          🚚 Repartidor 2
-        </button>
-        <button class="btn-asignar-repartidor" data-repartidor="" style="background:#6b7280;color:white;border:none;padding:12px;border-radius:8px;font-size:16px;cursor:pointer;font-weight:600;">
-          ❌ Sin asignar
-        </button>
-        <button class="btn-cancelar-asignar" style="background:#ef4444;color:white;border:none;padding:12px;border-radius:8px;font-size:16px;cursor:pointer;font-weight:600;">
-          Cancelar
-        </button>
-      </div>
-    </div>
-  `;
-
-  // Mostrar modal
-  const modalOverlay = document.createElement('div');
-  modalOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000;';
-  modalOverlay.innerHTML = opciones;
-  document.body.appendChild(modalOverlay);
-
-  // Event listeners para botones
-  const botonesAsignar = modalOverlay.querySelectorAll('.btn-asignar-repartidor');
-  const btnCancelar = modalOverlay.querySelector('.btn-cancelar-asignar');
-
-  botonesAsignar.forEach(btn => {
-    btn.onclick = async () => {
-      const repartidor = btn.dataset.repartidor;
-      
-      try {
-        // Actualizar en Supabase
-        const { error } = await supabase_client
-          .from('pedidos')
-          .update({ asignado_a: repartidor || null })
-          .eq('id', docId);
-        
-        if (error) throw new Error(error.message);
-        
-        ErrorHandler.mostrarExito(`✅ Pedido asignado a: ${repartidor || 'Sin asignar'}`);
-        document.body.removeChild(modalOverlay);
-        cargarPedidos();
-        
-      } catch (error) {
-        console.error('Error al asignar repartidor:', error);
-        ErrorHandler.mostrarError(`⚠️ Error: ${error.message}`);
-      }
-    };
-  });
-
-  btnCancelar.onclick = () => {
-    document.body.removeChild(modalOverlay);
-  };
-
-  // Cerrar al hacer clic fuera
-  modalOverlay.onclick = (e) => {
-    if (e.target === modalOverlay) {
-      document.body.removeChild(modalOverlay);
-    }
-  };
 }
 
 /**
@@ -1653,8 +1874,15 @@ async function reactivarPedido(docId, btnElement = null) {
   }
 
   try {
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible');
+      ErrorHandler.mostrarError('Error: No se pudo conectar');
+      return;
+    }
+    
     // Actualizar pedido en Supabase - volver a estado pendiente
-    const { error } = await supabase_client
+    const { error } = await client
       .from('pedidos')
       .update({ 
         entregado: false,
@@ -1726,10 +1954,17 @@ async function toggleEntregado(docId, estadoActual, btnElement = null) {
   }
 
   try {
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible');
+      ErrorHandler.mostrarError('Error: No se pudo conectar');
+      return;
+    }
+    
     if (estadoActual) {
       // Si ya está entregado, desmarcar directamente sin confirmación
       // Paso 2: Llamada a Supabase
-      const { error } = await supabase_client.from('pedidos').update({ entregado: false }).eq('id', docId);
+      const { error } = await client.from('pedidos').update({ entregado: false }).eq('id', docId);
       
       // Paso 3: Manejo de error
       if (error) {
@@ -1742,7 +1977,7 @@ async function toggleEntregado(docId, estadoActual, btnElement = null) {
       
     } else {
       // Verificar si el pedido ya está pagado antes de abrir modal
-      const { data: pedido, error } = await supabase_client
+      const { data: pedido, error } = await client
         .from('pedidos')
         .select('metodo_pago, nombre')
         .eq('id', docId)
@@ -1754,7 +1989,48 @@ async function toggleEntregado(docId, estadoActual, btnElement = null) {
       
       const metodoPago = pedido.metodo_pago || 'E';
       
-      // CAMBIO: Siempre abrir modal de confirmación de pago (sin excepciones)
+      // OPCIÓN 1: Si ya está pagado (TG o P), confirmar una sola vez de forma simple
+      if (metodoPago === 'TG' || metodoPago === 'P') {
+        console.log('✅ Pedido ya pagado, solicitando confirmación simple');
+        
+        // Restaurar botón primero
+        if (btnElement) {
+          btnElement.disabled = false;
+          btnElement.classList.remove('btn-loading');
+          btnElement.innerHTML = textoOriginal;
+          btnElement.style.opacity = '1';
+        }
+        
+        // Confirmación simple
+        const metodoPagoNombre = metodoPago === 'TG' ? 'Transferencia Pagada' : 'Pagado';
+        const confirmacion = confirm(
+          `Este pedido ya está pagado por ${metodoPagoNombre}\n\n` +
+          `Cliente: ${pedido.nombre || '(sin nombre)'}\n\n` +
+          `¿Confirmas la entrega?`
+        );
+        
+        if (!confirmacion) {
+          console.log('❌ Entrega cancelada');
+          return;
+        }
+        
+        // Marcar como entregado
+        const { error: updateError } = await client
+          .from('pedidos')
+          .update({ entregado: true })
+          .eq('id', docId);
+        
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+        
+        // Notificación de éxito
+        ErrorHandler.mostrarExito(`✅ Pedido entregado (${metodoPagoNombre})`);
+        cargarPedidos();
+        return;
+      }
+      
+      // Para otros métodos de pago (E, DC, TP), abrir modal de confirmación
       // Restaurar botón y abrir modal
       if (btnElement) {
         btnElement.disabled = false;
@@ -1762,7 +2038,7 @@ async function toggleEntregado(docId, estadoActual, btnElement = null) {
         btnElement.innerHTML = textoOriginal;
         btnElement.style.opacity = '1';
       }
-      // Abrir modal de confirmación de pago OBLIGATORIO
+      // Abrir modal de confirmación de pago
       abrirModalConfirmacionPago(docId)
     }
     
@@ -1796,8 +2072,15 @@ async function toggleEntregado(docId, estadoActual, btnElement = null) {
  * @param {string} docId - ID del pedido a entregar
  */
 async function abrirModalConfirmacionPago(docId) {
+  const client = getSupabaseClient();
+  if (!client) {
+    console.error('❌ Cliente no disponible');
+    alert('Error: No se pudo conectar a la base de datos');
+    return;
+  }
+  
   // Obtener datos del pedido
-  const { data: pedido, error } = await supabase_client
+  const { data: pedido, error } = await client
     .from('pedidos')
     .select('*')
     .eq('id', docId)
@@ -2062,8 +2345,14 @@ async function confirmarEntregaPago(docId, pedido) {
     updateData.notas = (pedido.notas ? pedido.notas + ' | ' : '') + notasFinales;
   }
   
+  const client = getSupabaseClient();
+  if (!client) {
+    alert('Error: No se pudo conectar a la base de datos');
+    return;
+  }
+  
   // Actualizar en la base de datos
-  const { error } = await supabase_client.from('pedidos').update(updateData).eq('id', docId);
+  const { error } = await client.from('pedidos').update(updateData).eq('id', docId);
   
   if (error) {
     alert('Error al confirmar entrega: ' + error.message);
@@ -2105,9 +2394,35 @@ function obtenerNombreMetodoPago(codigo) {
  * @param {string} fechaActual - Fecha actual del pedido
  */
 async function reagendarPedido(docId, fechaActual){
+  // DOBLE CONFIRMACIÓN: Primera confirmación
+  const nuevaFecha = nextBusinessDayISO(fechaActual);
+  const primeraConfirmacion = confirm(
+    `⚠️ ¿Estás seguro que quieres REAGENDAR este pedido?\n\n` +
+    `📅 Fecha actual: ${fechaActual}\n` +
+    `📅 Nueva fecha: ${nuevaFecha}\n\n` +
+    `Esta acción moverá el pedido al día siguiente.`
+  );
+  
+  if (!primeraConfirmacion) {
+    console.log('❌ Reagendamiento cancelado en primera confirmación');
+    return;
+  }
+  
+  // DOBLE CONFIRMACIÓN: Segunda confirmación
+  const segundaConfirmacion = confirm(
+    `🔔 ÚLTIMA CONFIRMACIÓN\n\n` +
+    `¿CONFIRMAS que quieres reagendar para el ${nuevaFecha}?\n\n` +
+    `Esta es tu última oportunidad para cancelar.`
+  );
+  
+  if (!segundaConfirmacion) {
+    console.log('❌ Reagendamiento cancelado en segunda confirmación');
+    ErrorHandler.mostrarInfo('ℹ️ Reagendamiento cancelado');
+    return;
+  }
+  
   // MODO OFFLINE: Verificar conectividad primero
   if (!OfflineManager.estaOnline()) {
-    const nuevaFecha = nextBusinessDayISO(fechaActual);
     OfflineManager.guardarEnCola('REAGENDAR', { id: docId, fecha: nuevaFecha });
     ErrorHandler.mostrarWarning(`📡 Sin conexión. El reagendamiento a ${nuevaFecha} se sincronizará automáticamente.`);
     
@@ -2125,12 +2440,17 @@ async function reagendarPedido(docId, fechaActual){
     return;
   }
   
-  const nuevaFecha = nextBusinessDayISO(fechaActual);
-  const { error } = await supabase_client.from('pedidos').update({ fecha: nuevaFecha }).eq('id', docId);
+  const client = getSupabaseClient();
+  if (!client) {
+    alert('⚠️ Error: No se pudo conectar a la base de datos');
+    return;
+  }
+  
+  const { error } = await client.from('pedidos').update({ fecha: nuevaFecha }).eq('id', docId);
   if(error) {
     alert('⚠️ Error de conexión. No se pudo reagendar el pedido. Intenta de nuevo.\n\nDetalle: ' + error.message);
   } else { 
-    ErrorHandler.mostrarExito('📅 Pedido reagendado para: ' + nuevaFecha);
+    ErrorHandler.mostrarExito('✅ Pedido reagendado exitosamente para: ' + nuevaFecha);
     cargarPedidos();
   }
 }
@@ -2155,8 +2475,14 @@ async function eliminarPedido(docId){
   }
 
   try {
+    const client = getSupabaseClient();
+    if (!client) {
+      alert('Error: No se pudo conectar a la base de datos');
+      return;
+    }
+    
     // Obtener datos del pedido para verificar que no esté entregado
-    const { data: pedido, error: errorFetch } = await supabase_client
+    const { data: pedido, error: errorFetch } = await client
       .from('pedidos')
       .select('entregado, nombre, telefono')
       .eq('id', docId)
@@ -2174,7 +2500,7 @@ async function eliminarPedido(docId){
     }
     
     // Eliminar pedido de Supabase
-    const { error } = await supabase_client.from('pedidos').delete().eq('id', docId);
+    const { error } = await client.from('pedidos').delete().eq('id', docId);
     
     if (error) {
       alert('Error al eliminar pedido: ' + error.message);
@@ -2196,7 +2522,13 @@ async function marcarTransferenciaPagada(docId) {
   if(!confirm('🔄 ¿Confirmar que la transferencia ya fue recibida?\n\n✅ El pedido se marcará como "Transferencia Pagada".')) return;
   
   try {
-    const { error } = await supabase_client
+    const client = getSupabaseClient();
+    if (!client) {
+      alert('Error: No se pudo conectar a la base de datos');
+      return;
+    }
+    
+    const { error } = await client
       .from('pedidos')
       .update({ metodo_pago: 'TG' }) // TG = Transferencia Pagada
       .eq('id', docId);
@@ -2214,90 +2546,19 @@ async function marcarTransferenciaPagada(docId) {
 }
 
 /**
- * Marca la transferencia de un pago mixto como pagada
- * Cambia el texto en las notas de "Transferencia" a "Transferencia PAGADA"
- */
-async function marcarPagoMixtoPagado(docId) {
-  console.log('🔀 Marcando pago mixto como pagado:', docId);
-  
-  try {
-    // Obtener el pedido actual
-    const { data: pedido, error: errorFetch } = await supabase_client
-      .from('pedidos')
-      .select('*')
-      .eq('id', docId)
-      .single();
-    
-    if (errorFetch) {
-      console.error('❌ Error al obtener pedido:', errorFetch);
-      alert('Error al obtener datos del pedido: ' + errorFetch.message);
-      return;
-    }
-    
-    console.log('📦 Pedido actual:', pedido);
-    
-    // Actualizar notas para marcar transferencia como PAGADA
-    let notasActualizadas = pedido.notas || '';
-    notasActualizadas = notasActualizadas.replace('🔄 Transferencia:', '✅ Transferencia PAGADA:');
-    
-    // Si usa código PM, cambiar a PMP
-    let nuevoMetodo = pedido.metodo_pago;
-    if (nuevoMetodo === 'PM') {
-      nuevoMetodo = 'PMP';
-    }
-    
-    // Verificar conexión
-    if (!OfflineManager.estaOnline()) {
-      console.log('⚠️ Sin conexión - Guardando en cola offline');
-      OfflineManager.guardarEnCola('PAGO_MIXTO_PAGADO', { 
-        id: docId,
-        notas: notasActualizadas,
-        metodo_pago: nuevoMetodo
-      });
-      ErrorHandler.mostrarWarning('⚠️ Sin conexión. Se marcará cuando vuelva internet.');
-      
-      // Actualizar localmente en cache
-      const pedidoIndex = datosLocal.findIndex(p => p.id === docId);
-      if (pedidoIndex !== -1) {
-        datosLocal[pedidoIndex].notas = notasActualizadas;
-        datosLocal[pedidoIndex].metodo_pago = nuevoMetodo;
-        renderizarPedidos(datosLocal);
-        actualizarResumenCaja(datosLocal);
-      }
-      return;
-    }
-    
-    const { data, error } = await supabase_client
-      .from('pedidos')
-      .update({ 
-        notas: notasActualizadas,
-        metodo_pago: nuevoMetodo
-      })
-      .eq('id', docId)
-      .select();
-    
-    if (error) {
-      console.error('❌ Error al actualizar:', error);
-      alert('Error al actualizar pago mixto: ' + error.message);
-    } else {
-      console.log('✅ Pago mixto actualizado:', data);
-      ErrorHandler.mostrarExito('✅ Transferencia confirmada - Pago Mixto completado');
-      cargarPedidos(); // Recargar para actualizar el resumen de caja
-    }
-  } catch (error) {
-    console.error('❌ Error inesperado:', error);
-    alert('Error inesperado: ' + error.message);
-  }
-}
-
-/**
  * Marca un pedido como pagado y permite cambiar el método de pago
  * @param {string} docId - ID del pedido
  * @param {string} metodoActual - Método de pago actual
  */
 async function marcarComoPagado(docId, metodoActual) {
+  const client = getSupabaseClient();
+  if (!client) {
+    alert('Error: No se pudo conectar a la base de datos');
+    return;
+  }
+  
   // Obtener datos del pedido primero
-  const { data: pedido, error: errorFetch } = await supabase_client
+  const { data: pedido, error: errorFetch } = await client
     .from('pedidos')
     .select('*')
     .eq('id', docId)
@@ -2391,7 +2652,7 @@ async function marcarComoPagado(docId, metodoActual) {
     }
     
     // Actualizar en la base de datos
-    const { error } = await supabase_client.from('pedidos').update(updateData).eq('id', docId);
+    const { error } = await client.from('pedidos').update(updateData).eq('id', docId);
     
     if (error) {
       alert('Error al marcar como pagado: ' + error.message);
@@ -2406,8 +2667,15 @@ async function marcarComoPagado(docId, metodoActual) {
 // Editar pedido existente
 async function editarPedido(docId) {
   try {
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible');
+      ErrorHandler.mostrarError('Error: No se pudo conectar');
+      return;
+    }
+    
     // Obtener datos del pedido actual
-    const { data: pedido, error } = await supabase_client
+    const { data: pedido, error } = await client
       .from('pedidos')
       .select('*')
       .eq('id', docId)
@@ -2500,7 +2768,7 @@ async function actualizarPedido(docId) {
     btnActualizar.textContent = 'Actualizando...';
     btnActualizar.disabled = true;
     
-    const { error } = await supabase_client
+    const { error } = await client
       .from('pedidos')
       .update(pedidoActualizado)
       .eq('id', docId);
@@ -2565,8 +2833,14 @@ async function mostrarHistorialCliente(telefono, nombreCliente) {
     return;
   }
   
+  const client = getSupabaseClient();
+  if (!client) {
+    alert('Error: No se pudo conectar a la base de datos');
+    return;
+  }
+  
   // Buscar todos los pedidos del mismo teléfono
-  const { data, error } = await supabase_client
+  const { data, error } = await client
     .from('pedidos')
     .select('*')
     .eq('telefono', telefono)
@@ -2790,6 +3064,87 @@ function limpiarFormulario() {
   restaurarModoAgregar();
 }
 
+// Función para renderizar pedidos entregados en su sección
+function renderizarPedidosEntregados(pedidosEntregados) {
+  const seccionEntregados = document.getElementById('seccionEntregados');
+  const contadorEntregados = document.getElementById('contadorEntregadosHoy');
+  const resultadosEntregados = document.getElementById('resultadosEntregados');
+  
+  if (!seccionEntregados || !contadorEntregados || !resultadosEntregados) {
+    console.warn('⚠️ Elementos de sección entregados no encontrados');
+    return;
+  }
+  
+  // Si no hay pedidos entregados, ocultar la sección
+  if (!pedidosEntregados || pedidosEntregados.length === 0) {
+    seccionEntregados.style.display = 'none';
+    return;
+  }
+  
+  // Mostrar la sección y actualizar contador
+  seccionEntregados.style.display = 'block';
+  contadorEntregados.textContent = pedidosEntregados.length;
+  
+  // Limpiar contenedor
+  resultadosEntregados.innerHTML = '';
+  
+  // Ordenar por fecha de entrega (más recientes primero)
+  const pedidosOrdenados = [...pedidosEntregados].sort((a, b) => {
+    const fechaA = new Date(a.updated_at || a.created_at);
+    const fechaB = new Date(b.updated_at || b.created_at);
+    return fechaB - fechaA;
+  });
+  
+  // Renderizar cada pedido entregado usando la misma lógica de render
+  pedidosOrdenados.forEach(d => {
+    const div = document.createElement('div');
+    let claseEstado = d.estado === 'ANULADO' ? ' anulado' : ' delivered';
+    div.className = 'card-order' + claseEstado;
+    div.dataset.clienteId = d.id;
+
+    const resumenTexto = (Array.isArray(d.items) && d.items.length)
+          ? d.items.map(it => `${it.nombre} (${it.cantidad}x)`).join(', ')
+          : 'Sin productos';
+    
+    const cobrarLabel = obtenerTextoVenta(d);
+    const montoMatch = cobrarLabel.match(/\$[\d.,]+/);
+    const montoTexto = montoMatch ? montoMatch[0] : '$0';
+    
+    const metodoPago = d.metodo_pago || 'E';
+    const metodoPagoTexto = METODOS[metodoPago] || 'Sin método';
+    const iconoMetodo = metodoPago === 'E' ? '🟩' : metodoPago === 'DC' ? '💳' : metodoPago === 'TP' ? '⏳' : '✅';
+    
+    div.innerHTML = `
+      <div class="card-content-horizontal" style="display:grid;grid-template-columns:1fr;gap:12px;">
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:24px;font-weight:700;color:#6b7280;">${montoTexto}</span>
+            <span style="font-size:14px;font-weight:600;color:#6b7280;background:#f3f4f6;padding:4px 12px;border-radius:6px;">(${iconoMetodo} ${metodoPagoTexto})</span>
+          </div>
+          
+          <div style="font-size:15px;font-weight:600;color:#6b7280;">
+            👤 ${d.nombre || '(sin nombre)'}
+          </div>
+          
+          <div style="font-size:14px;color:#6b7280;">
+            📞 ${d.telefono || '(sin teléfono)'}
+          </div>
+          
+          <div style="background:#f3f4f6;padding:6px 10px;border-radius:6px;font-size:14px;color:#6b7280;">
+            📍 ${d.direccion || '(sin dirección)'}
+          </div>
+          
+          <div style="font-size:13px;color:#6b7280;background:#f9fafb;padding:6px 10px;border-radius:6px;">
+            🛒 ${resumenTexto}
+          </div>
+        </div>
+      </div>
+    `;
+    
+    resultadosEntregados.appendChild(div);
+  });
+}
+
 // Render principal
 // Render principal con sistema de rutas
 function render(datosParaRenderizar){
@@ -2848,15 +3203,7 @@ function render(datosParaRenderizar){
     
     // Badge de NUEVO
     const esNuevo = esPedidoNuevo(d.created_at);
-    const badgeNuevo = esNuevo ? '<span class="badge-nuevo">🆕 NUEVO</span>' : '';
-    
-    // Badge de REPARTIDOR ASIGNADO
-    let badgeRepartidor = '';
-    if (d.asignado_a === 'repartidor_1') {
-      badgeRepartidor = '<span style="display:inline-block;background:#3b82f6;color:white;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;margin-left:8px;">🚚 Repartidor 1</span>';
-    } else if (d.asignado_a === 'repartidor_2') {
-      badgeRepartidor = '<span style="display:inline-block;background:#10b981;color:white;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;margin-left:8px;">🚚 Repartidor 2</span>';
-    }
+    const badgeNuevoHTML = esNuevo ? '<div class="badge-nuevo-barra">🆕 NUEVO</div>' : '';
     
     // Extraer monto del cobrarLabel
     const montoMatch = cobrarLabel.match(/\$[\d.,]+/);
@@ -2865,62 +3212,81 @@ function render(datosParaRenderizar){
     // Estado de pago para mostrar
     const estadoPagoTexto = debeColectar ? 'POR COBRAR' : 'PAGADO';
     
+    // Obtener texto del método de pago
+    const metodoPagoTexto = METODOS[metodoPago] || 'Sin método';
+    const iconoMetodo = metodoPago === 'E' ? '🟩' : metodoPago === 'DC' ? '💳' : metodoPago === 'TP' ? '⏳' : '✅';
+    
     div.innerHTML = `
-      <div class="card-row">
-        <div class="card-left">
-          ${badgeNuevo}${badgeRepartidor}
-          <div class="line">
-            <span class="price-tag">${cobrarLabel}</span>
+      ${badgeNuevoHTML}
+      <div class="card-content-horizontal" style="display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start;">
+        
+        <!-- COLUMNA IZQUIERDA: Info principal -->
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <!-- Monto grande con método de pago -->
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:32px;font-weight:700;color:#059669;">${montoTexto}</span>
+            <span style="font-size:16px;font-weight:600;color:#6b7280;background:#f3f4f6;padding:4px 12px;border-radius:6px;">(${iconoMetodo} ${metodoPagoTexto})</span>
           </div>
-          <div class="client-name">${d.nombre || '(sin nombre)'}</div>
-          ${d.telefono ? `
-            <div class="line" style="display:flex;align-items:center;gap:8px;">
-              <span class="icon" data-telefono="${d.telefono}" data-action="call" style="cursor:pointer;">📞</span>
-              <span class="client-phone" data-telefono="${d.telefono}" data-action="call" style="cursor:pointer;">${d.telefono}</span>
+          
+          <!-- Nombre cliente -->
+          <div style="font-size:16px;font-weight:600;color:#1f2937;">
+            👤 ${d.nombre || '(sin nombre)'}
+          </div>
+          
+          <!-- Teléfono clickeable con WhatsApp -->
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="fila-telefono" data-telefono="${d.telefono || ''}" data-action="call" style="font-size:16px;color:#3b82f6;cursor:pointer;">
+              📞 ${d.telefono || '(sin teléfono)'}
+            </span>
+            ${d.telefono ? `
               <a href="https://wa.me/56${d.telefono.replace(/\D/g, '')}?text=Hola%20👋,%20somos%20Sabrofood%20🐶🐱%0AQueremos%20avisarte%20que%20tu%20pedido%20ya%20está%20listo%20y%20estamos%20próximos%20a%20realizar%20la%20entrega%20🚚%0A¿Te%20encuentras%20disponible%20para%20recibirlo?%0A¡Quedamos%20atentos!" 
                  target="_blank" 
-                 style="display:inline-flex;align-items:center;justify-content:center;background:#25d366;color:white;padding:6px;border-radius:50%;text-decoration:none;width:32px;height:32px;margin-left:4px;"
+                 style="display:inline-flex;align-items:center;justify-content:center;background:#25d366;color:white;padding:6px;border-radius:50%;text-decoration:none;width:36px;height:36px;"
                  title="Enviar WhatsApp">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
                   <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
                 </svg>
               </a>
-            </div>
-          ` : ''}
-          ${d.direccion ? `<div class="line" data-direccion="${d.direccion}" data-action="navigation"><span class="icon">📍</span><span class="client-address">${d.direccion}</span></div>` : ''}
-          ${resumenTexto !== 'Sin productos' ? `<div class="line"><span class="icon">🛒</span><span class="product-name">${resumenTexto}</span></div>` : ''}
-          
-          ${mensajeCambio ? `<div class="cambio-metodo-pago"><span class="cambio-texto">${mensajeCambio}</span></div>` : ''}
-        
-        ${notasRegulares ? `
-          <div class="nota-importante" style="background: #fee2e2; border-left: 4px solid #dc2626;">
-            <div class="line">
-              <span class="icon">⚠️</span>
-              <span class="note-destacada" style="color: #991b1b; font-weight: 600;">${notasRegulares}</span>
-            </div>
+            ` : ''}
           </div>
-        ` : ''}
+          
+          <!-- Dirección con fondo amarillo -->
+          <div class="fila-direccion" data-direccion="${d.direccion || ''}" data-action="navigation" style="background:#fef3c7;padding:8px 12px;border-radius:6px;font-size:15px;color:#92400e;cursor:pointer;border-left:4px solid #f59e0b;">
+            📍 ${d.direccion || '(sin dirección)'}
+          </div>
+          
+          <!-- Productos -->
+          <div style="font-size:14px;color:#6b7280;background:#f9fafb;padding:6px 10px;border-radius:6px;">
+            🛒 ${resumenTexto}
+          </div>
+          
+          ${notasRegulares ? `<div style="font-size:13px;color:#dc2626;background:#fee2e2;padding:6px 10px;border-radius:6px;border-left:3px solid #dc2626;">⚠️ ${notasRegulares}</div>` : ''}
         </div>
         
-        <div class="ruta-controls">
-          <div class="prioridad-section">
-            <label class="prioridad-label" style="font-size: 16px; font-weight: 600; color: #374151;">🚚 Ruta:</label>
+        <!-- COLUMNA DERECHA: Ruta y Orden -->
+        <div style="display:flex;flex-direction:column;gap:12px;min-width:120px;">
+          <!-- Ruta (Prioridad) -->
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <label style="font-size:13px;font-weight:600;color:#6b7280;">🚗 RUTA:</label>
             <select class="prioridad-select" data-doc="${d.id}" style="
-              background: ${prioridadInfo.bgColor}; 
-              color: ${prioridadInfo.color}; 
-              border: 1px solid ${prioridadInfo.color};
-              border-radius: 6px;
-              padding: 4px 8px;
-              font-weight: 600;
-              font-size: 12px;
+              background:${prioridadInfo.bgColor};
+              color:${prioridadInfo.color};
+              border:2px solid ${prioridadInfo.color};
+              border-radius:6px;
+              padding:6px 10px;
+              font-weight:700;
+              font-size:14px;
+              cursor:pointer;
             ">
-              <option value="A" ${prioridad === 'A' ? 'selected' : ''}>🔴 A - Alta</option>
-              <option value="B" ${prioridad === 'B' ? 'selected' : ''}>🟡 B - Media</option>
-              <option value="C" ${prioridad === 'C' ? 'selected' : ''}>🟢 C - Baja</option>
+              <option value="A" ${prioridad === 'A' ? 'selected' : ''}>🔴 Alto</option>
+              <option value="B" ${prioridad === 'B' ? 'selected' : ''}>🟡 Medio</option>
+              <option value="C" ${prioridad === 'C' ? 'selected' : ''}>🟢 Bajo</option>
             </select>
           </div>
-          <div class="prioridad-numerica">
-            <label for="orden-${d.id}" style="font-size: 16px; color: #666; margin-bottom: 6px; display: block; font-weight: 600;">🔢 Orden:</label>
+          
+          <!-- Orden numérico -->
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <label style="font-size:13px;font-weight:600;color:#6b7280;">📊 ORDEN:</label>
             <input 
               type="number" 
               id="orden-${d.id}"
@@ -2930,32 +3296,24 @@ function render(datosParaRenderizar){
               min="1"
               max="99"
               placeholder="#"
-              title="Orden de entrega (1, 2, 3...)"
               style="
-                width: 80px;
-                height: 50px;
-                padding: 12px 10px;
-                border: 2px solid #ddd;
-                -webkit-appearance: none;
-                -moz-appearance: textfield;
-                border-radius: 8px;
-                font-size: 16px;
-                font-weight: 600;
-                text-align: center;
-                background: #fff;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                transition: all 0.2s ease;
-                -webkit-appearance: none;
-                -moz-appearance: textfield;
+                width:100%;
+                height:40px;
+                padding:8px;
+                border:2px solid #e5e7eb;
+                border-radius:6px;
+                font-size:18px;
+                font-weight:600;
+                text-align:center;
+                background:#fff;
               "
-              onFocus="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 0 0 3px rgba(59,130,246,0.1)'"
-              onBlur="this.style.borderColor='#ddd'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)'"
             >
           </div>
         </div>
-        
-        <!-- ACCIONES PRINCIPALES DEL REPARTIDOR -->
-        <div class="acciones-repartidor">
+      </div>
+      
+      <!-- ACCIONES PRINCIPALES DEL REPARTIDOR (VISIBLES) -->
+      <div class="acciones-repartidor">
           ${d.estado === 'ANULADO' ? `
             <!-- Pedido ANULADO: Mostrar opción de reactivar -->
             <div class="estado-entregado estado-anulado">
@@ -2983,56 +3341,18 @@ function render(datosParaRenderizar){
               </div>
             `}
           `}
-          
-          <!-- Contenedor del botón de menú y dropdown -->
-          <div style="position: relative;">
-            <button class="btn-menu-acciones" type="button" aria-label="Más opciones" data-doc="${d.id}" title="Más opciones">
-              ⚙️
-            </button>
-            
-            <!-- Menú desplegable -->
-            <div class="menu-acciones-dropdown" data-menu="${d.id}" style="display:none;">
-              <button class="menu-item" data-action="historial" data-telefono="${d.telefono}" data-nombre="${d.nombre}">
-                <span class="menu-icon">📚</span>
-                <span class="menu-text">Historial</span>
-              </button>
-              ${!d.entregado && d.estado !== 'ANULADO' ? `
-                <button class="menu-item" data-action="asignar-repartidor" data-doc="${d.id}">
-                  <span class="menu-icon">🚚</span>
-                  <span class="menu-text">Asignar Repartidor</span>
-                </button>
-                <button class="menu-item" data-action="editar" data-doc="${d.id}">
-                  <span class="menu-icon">✏️</span>
-                  <span class="menu-text">Editar</span>
-                </button>
-                <button class="menu-item" data-action="anular" data-doc="${d.id}">
-                  <span class="menu-icon">🚫</span>
-                  <span class="menu-text">Anular</span>
-                </button>
-                <button class="menu-item menu-item-danger" data-action="eliminar" data-doc="${d.id}">
-                  <span class="menu-icon">🗑️</span>
-                  <span class="menu-text">Eliminar</span>
-                </button>
-              ` : ''}
-            </div>
-          </div>
-          
-          <!-- Botón especial para transferencias pendientes -->
-          ${d.metodo_pago === 'TP' && !(d.notas || '').includes('PAGO MIXTO') ? `
-            <button class="btn-transferencia-pagada" type="button" aria-label="Marcar transferencia como pagada" data-doc="${d.id}" style="background: #10b981; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 8px;">
-              💰 Marcar como Pagada
-            </button>
-          ` : ''}
-          
-          <!-- Botón especial para pago mixto con transferencia pendiente -->
-          ${(d.metodo_pago === 'PM' || (d.notas || '').includes('PAGO MIXTO')) && (d.notas || '').includes('Transferencia') && !(d.notas || '').includes('Transferencia PAGADA') ? `
-            <button class="btn-pago-mixto-pagado" type="button" aria-label="Confirmar transferencia del pago mixto" data-doc="${d.id}" style="background: #8b5cf6; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 8px;">
-              💰 Marcar como Pagada
-            </button>
-          ` : ''}
-        </div>
       </div>
-    </div>
+      
+      <!-- MEJORA 1: MENÚ COMPACTO DE ACCIONES -->
+      <div class="btn-action" style="align-items:flex-end;position:relative;">
+        ${d.metodo_pago === 'TP' ? `
+          <button class="btn-transferencia-pagada" type="button" aria-label="Marcar transferencia como pagada" data-doc="${d.id}" style="background: #10b981; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;">💰 Transf. Pagada</button>
+        ` : ''}
+        
+        <!-- Botón de menú compacto - DESHABILITADO PARA REPARTIDORES -->
+        <!-- Los repartidores no necesitan editar, anular o eliminar pedidos -->
+        
+      </div>
     `;
 
     // CLICS INTELIGENTES - Dirección y Teléfono
@@ -3073,11 +3393,8 @@ function render(datosParaRenderizar){
     const btnEnt = div.querySelector('.btn-entregado'); // mantener compatibilidad
     const btnReactivar = div.querySelector('.btn-reactivar-pedido');
     const btnTransfPagada = div.querySelector('.btn-transferencia-pagada');
-    const btnPagoMixtoPagado = div.querySelector('.btn-pago-mixto-pagado');
     
-    // MEJORA 1: Botón y menú de acciones compacto
-    const btnMenuAcciones = div.querySelector('.btn-menu-acciones');
-    const menuDropdown = div.querySelector('.menu-acciones-dropdown');
+    // Menú de acciones removido - Los repartidores no necesitan estas opciones
     
     // eventos en controles de ruta
     const selectPrioridad = div.querySelector('.prioridad-select');
@@ -3107,55 +3424,8 @@ function render(datosParaRenderizar){
       ev.stopPropagation();
       marcarTransferenciaPagada(d.id);
     };
-    if(btnPagoMixtoPagado) {
-      console.log('✅ Botón de Pago Mixto encontrado para pedido:', d.id);
-      btnPagoMixtoPagado.onclick = (ev)=>{
-        ev.stopPropagation();
-        console.log('🔀 Click en botón Pago Mixto - ID:', d.id);
-        marcarPagoMixtoPagado(d.id);
-      };
-    }
     
-    // MEJORA 1: Event listeners para menú compacto
-    if(btnMenuAcciones) {
-      btnMenuAcciones.onclick = (ev)=>{
-        ev.stopPropagation();
-        toggleMenuAcciones(menuDropdown, btnMenuAcciones);
-      };
-    }
-    
-    if(menuDropdown) {
-      const menuItems = menuDropdown.querySelectorAll('.menu-item');
-      menuItems.forEach(item => {
-        item.onclick = (ev) => {
-          ev.stopPropagation();
-          const action = item.dataset.action;
-          const docId = item.dataset.doc;
-          
-          // Cerrar menú
-          menuDropdown.style.display = 'none';
-          
-          // Ejecutar acción
-          switch(action) {
-            case 'historial':
-              mostrarHistorialCliente(item.dataset.telefono, item.dataset.nombre);
-              break;
-            case 'asignar-repartidor':
-              asignarRepartidor(docId);
-              break;
-            case 'editar':
-              editarPedido(docId);
-              break;
-            case 'anular':
-              anularPedido(docId, item);
-              break;
-            case 'eliminar':
-              eliminarPedido(docId, item);
-              break;
-          }
-        };
-      });
-    }
+    // Event listeners del menú de acciones removidos - No se necesitan en repartidor
     
     // Event listeners para ruta
     if(selectPrioridad) selectPrioridad.onchange = (ev) => {
@@ -3182,28 +3452,53 @@ function render(datosParaRenderizar){
   });
   
   // Actualizar resumen de caja después de renderizar
-  actualizarResumenCaja(datosParaRenderizar);
+  // Filtrar por fecha según el filtro activo
+  let pedidosParaResumen = [];
+  
+  if (filtroActual === 'hoy') {
+    const fechaHoy = getFechaFormateada(new Date());
+    pedidosParaResumen = todosPedidosDelChofer.filter(p => p.fecha === fechaHoy);
+  } else if (filtroActual === 'manana') {
+    const fechaManana = getFechaManana();
+    pedidosParaResumen = todosPedidosDelChofer.filter(p => p.fecha === fechaManana);
+  } else if (filtroActual === 'mes') {
+    pedidosParaResumen = todosPedidosDelChofer.filter(p => esMesActual(p.fecha));
+  } else {
+    // Si no hay filtro activo, usar los datos que se están renderizando
+    pedidosParaResumen = datosParaRenderizar;
+  }
+  
+  actualizarResumenCaja(pedidosParaResumen);
 }
 
 // Contador de resultados
-function updateResultCount(n, q){
+function updateResultCount(n, q, pedidosConEntregados = []){
   const el = getElement('resultCount');
   if(!el) return;
   // Ocultar contador de resultados
   el.textContent = '';
   
   // Actualizar contador de pedidos en el badge
-  actualizarContadorPedidos(n);
+  actualizarContadorPedidos(n, pedidosConEntregados);
 }
 
 /**
  * MEJORA 3: CONTADOR DE PROGRESO
- * Muestra "✅ [Entregados] / � [Anulados] / 📦 [Total]"
+ * Muestra "✅ [Entregados] / 🚫 [Anulados] / 📦 [Total]"
  * Solo cuenta los pedidos que se están mostrando según el filtro actual
  */
-function actualizarContadorPedidos(cantidad) {
-  // Usar SOLO los datos filtrados que se están mostrando
-  const datosActuales = datosFiltrados.length > 0 ? datosFiltrados : datosLocal;
+function actualizarContadorPedidos(cantidad, pedidosConEntregados = []) {
+  // Si se proporcionan pedidos con entregados, usarlos (incluye entregados del día filtrado)
+  // Si no, usar los datos filtrados o locales (solo pendientes)
+  let datosActuales;
+  
+  if (pedidosConEntregados.length > 0) {
+    // Usar los pedidos filtrados por fecha que incluyen entregados
+    datosActuales = pedidosConEntregados;
+  } else {
+    // Fallback: usar datos filtrados o locales
+    datosActuales = datosFiltrados.length > 0 ? datosFiltrados : datosLocal;
+  }
   
   // Contar cada categoría
   const entregados = datosActuales.filter(p => p.entregado && p.estado !== 'ANULADO').length;
@@ -3444,10 +3739,45 @@ function aplicarFiltroFecha(tipoFiltro) {
   }
   
   render(resultados);
-  updateResultCount(resultados.length, descripcionFiltro);
   
-  // Actualizar resumen de caja con los datos filtrados
-  actualizarResumenCaja(resultados);
+  // Filtrar TODOS los pedidos del chofer (incluyendo entregados) por la fecha del filtro
+  let pedidosParaResumen = [];
+  let pedidosEntregadosFiltrados = [];
+  
+  switch(tipoFiltro) {
+    case 'hoy':
+      const fechaHoy = getFechaFormateada(new Date());
+      pedidosParaResumen = todosPedidosDelChofer.filter(p => p.fecha === fechaHoy);
+      // Mostrar solo entregados de HOY
+      pedidosEntregadosFiltrados = todosPedidosDelChofer.filter(p => p.entregado && p.fecha === fechaHoy);
+      break;
+      
+    case 'manana':
+      const fechaManana = getFechaManana();
+      pedidosParaResumen = todosPedidosDelChofer.filter(p => p.fecha === fechaManana);
+      // Mostrar solo entregados de MAÑANA
+      pedidosEntregadosFiltrados = todosPedidosDelChofer.filter(p => p.entregado && p.fecha === fechaManana);
+      break;
+      
+    case 'mes':
+      pedidosParaResumen = todosPedidosDelChofer.filter(p => esMesActual(p.fecha));
+      // Mostrar solo entregados de ESTE MES
+      pedidosEntregadosFiltrados = todosPedidosDelChofer.filter(p => p.entregado && esMesActual(p.fecha));
+      break;
+      
+    default:
+      pedidosParaResumen = todosPedidosDelChofer.filter(p => esMesActual(p.fecha));
+      pedidosEntregadosFiltrados = todosPedidosDelChofer.filter(p => p.entregado && esMesActual(p.fecha));
+  }
+  
+  // Renderizar pedidos entregados en su sección (filtrados por fecha)
+  renderizarPedidosEntregados(pedidosEntregadosFiltrados);
+  
+  // Actualizar contador con pedidos filtrados (incluyendo entregados)
+  updateResultCount(resultados.length, descripcionFiltro, pedidosParaResumen);
+  
+  // Actualizar resumen de caja con los pedidos filtrados por fecha
+  actualizarResumenCaja(pedidosParaResumen);
 }
 
 // Función para filtrar por fecha específica (cuando se usa el input date)
@@ -3469,8 +3799,18 @@ function filtrarPorFecha() {
   });
   
   render(resultados);
-  updateResultCount(resultados.length, `fecha: ${fechaFiltro}`);
-  actualizarResumenCaja(resultados);
+  
+  // Filtrar TODOS los pedidos del chofer por la fecha específica (incluyendo entregados)
+  const pedidosParaResumen = todosPedidosDelChofer.filter(p => p.fecha === fechaFiltro);
+  
+  // Mostrar solo entregados de la fecha específica
+  const pedidosEntregadosFiltrados = todosPedidosDelChofer.filter(p => p.entregado && p.fecha === fechaFiltro);
+  renderizarPedidosEntregados(pedidosEntregadosFiltrados);
+  
+  // Actualizar contador con pedidos filtrados (incluyendo entregados)
+  updateResultCount(resultados.length, `fecha: ${fechaFiltro}`, pedidosParaResumen);
+  
+  actualizarResumenCaja(pedidosParaResumen);
   
   filtroActual = 'custom';
 }
@@ -3563,6 +3903,13 @@ function inicializarAppCompleta() {
     btnMes.onclick = () => aplicarFiltroFecha('mes');
   }
   
+  // Aplicar filtro de HOY por defecto al iniciar
+  setTimeout(() => {
+    if (btnHoy) {
+      btnHoy.classList.add('active');
+    }
+  }, 100);
+  
   // Botones del formulario modal
   const btnAgregar = document.getElementById('btnAgregar');
   if (btnAgregar) {
@@ -3645,11 +3992,15 @@ function inicializarAppCompleta() {
 
 // Event listeners para búsqueda y filtros
 document.addEventListener('DOMContentLoaded', function() {
-  // La autenticación ya está verificada en el HTML (route protection)
-  // Si llegamos aquí, el usuario está autenticado
-  console.log('✅ Usuario autenticado - Inicializando aplicación...');
+  // Verificar autenticación
+  if (!estaAutenticado()) {
+    setTimeout(() => {
+      mostrarModalAuth();
+    }, 200);
+    return;
+  }
   
-  // Inicializar la aplicación
+  // Si está autenticado, inicializar la aplicación
   inicializarApp();
   inicializarAppCompleta();
 });
@@ -3660,40 +4011,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Función para calcular y actualizar resumen de caja
 /**
- * LÓGICA DE RECAUDACIÓN COMPLETA CON PAGO MIXTO
- * Calcula el dinero que el repartidor debe rendir y las ventas totales del local
- * 
- * REGLAS DE NEGOCIO:
- * 
- * 1. DINERO A RENDIR (Repartidor): 
- *    - Todo lo que el chofer trae físicamente (Billetes o Vouchers de Débito)
- * 
- * 2. VENTA TOTAL (Local):
- *    - Suma de todo lo vendido
- * 
- * LÓGICA DE PAGO MIXTO:
- * 
- * Caso 1: 'PM' - Pago Mixto (Pendiente)
- *   - Escenario: Repartidor entregó, pero transferencia NO confirmada
- *   - Busca número en notas (ej: "15000 efectivo resto transf")
- *   - Dinero Repartidor: +15000 (solo efectivo)
- *   - Venta Local: +15000 (solo efectivo, transferencia pendiente)
- * 
- * Caso 2: 'PMP' - Pago Mixto (Pagado)
- *   - Escenario: Local confirmó que llegó la transferencia
- *   - Busca número en notas (ej: "15000 efectivo resto transf")
- *   - Dinero Repartidor: +15000 (solo efectivo físico)
- *   - Venta Local: +30000 (TOTAL COMPLETO, transferencia confirmada)
- * 
- * Pagos Simples:
- *   - 'E' (Efectivo): 100% al Dinero a Rendir y Total Local
- *   - 'DC' (Débito/Crédito): 100% al Dinero a Rendir y Total Local
- *   - 'TP' (Transferencia Pendiente): 100% al Total Local, 0 al Dinero a Rendir
- *   - 'TG' (Transferencia Pagada): 100% al Total Local, 0 al Dinero a Rendir
- * 
- * Fallback: Si no hay número en notas, asume 100% transferencia (protege al chofer)
+ * MEJORA 6: LÓGICA DE RECAUDACIÓN REAL
+ * Calcula el dinero que el repartidor debe cobrar en la calle
+ * EXCLUYE pedidos con método "Pagado" (TG, P) del total recaudado
  */
-function actualizarResumenCaja(datos = datosLocal) {
+function actualizarResumenCaja(datos = []) {
   let totalEfectivo = 0;
   let totalTarjetas = 0;
   let totalTransferencias = 0;
@@ -3702,7 +4024,6 @@ function actualizarResumenCaja(datos = datosLocal) {
   let cantidadTarjetas = 0;
   let cantidadTransferencias = 0;
   let cantidadPagados = 0;
-  let totalVentaLocal = 0; // NUEVO: Suma de TODAS las ventas (incluye transferencias pagadas)
 
   datos.forEach((pedido) => {
     // Solo contar pedidos entregados Y NO anulados
@@ -3722,162 +4043,61 @@ function actualizarResumenCaja(datos = datosLocal) {
       }
       
       if (total > 0) {
+        // Detectar si es pago mixto buscando en las notas
         const notas = pedido.notas || '';
+        const esPagoMixto = notas.includes('🔄 PAGO MIXTO:') || notas.includes('PAGO MIXTO:');
         
-        // ============================================================
-        // LÓGICA DE PAGO MIXTO REFINADA
-        // ============================================================
-        
-        // CASO 1: PAGO MIXTO PENDIENTE (PM)
-        // La transferencia NO está confirmada aún
-        // - Dinero Repartidor: Solo el efectivo
-        // - Venta Local: Solo el efectivo (la transferencia no cuenta hasta confirmarse)
-        if (metodo === 'PM') {
-          const patronNumero = /(\d+[\.,]?\d*)\s*(?:efectivo|efec|pesos|$)/i;
-          const match = notas.match(patronNumero);
-          
-          if (match) {
-            const montoEfectivo = parseInt(match[1].replace(/[,\.]/g, '')) || 0;
-            
-            // Dinero Repartidor: +efectivo
-            totalEfectivo += montoEfectivo;
-            cantidadEfectivo++;
-            
-            // Venta Local: +efectivo (NO suma transferencia porque está pendiente)
-            totalVentaLocal += montoEfectivo;
-            
-            // Registrar resto como transferencia pendiente (visual, no suma a nada)
-            const montoTransferencia = total - montoEfectivo;
-            if (montoTransferencia > 0) {
-              totalTransferencias += montoTransferencia;
-              cantidadTransferencias++;
-            }
-            
-            console.log(`📝 Pago Mixto PENDIENTE: $${montoEfectivo} efectivo (confirmado) + $${montoTransferencia} transf (pendiente) | Total pedido: $${total}`);
-          } else {
-            // FALLBACK: Sin número en notas, asumir 100% transferencia pendiente
-            console.warn(`⚠️ Pago Mixto Pendiente sin monto. Asumiendo todo transferencia. Notas: "${notas}"`);
-            totalTransferencias += total;
-            cantidadTransferencias++;
-            // NO suma a Venta Local (pendiente de confirmar)
-            
-            if (!window.alertaPagoMixtoPendienteMostrada) {
-              window.alertaPagoMixtoPendienteMostrada = true;
-              setTimeout(() => {
-                alert(`⚠️ ATENCIÓN: Pago Mixto Pendiente sin monto en notas.\n\nPor seguridad, se asumió como 100% transferencia.\n\nEscribe en notas: "15000 efectivo resto transf"`);
-              }, 500);
-            }
-          }
-        }
-        
-        // CASO 2: PAGO MIXTO PAGADO (PMP)
-        // La transferencia YA está confirmada
-        // - Dinero Repartidor: Solo el efectivo (sigue igual)
-        // - Venta Local: TOTAL COMPLETO (efectivo + transferencia confirmada)
-        else if (metodo === 'PMP') {
-          const patronNumero = /(\d+[\.,]?\d*)\s*(?:efectivo|efec|pesos|$)/i;
-          const match = notas.match(patronNumero);
-          
-          if (match) {
-            const montoEfectivo = parseInt(match[1].replace(/[,\.]/g, '')) || 0;
-            
-            // Dinero Repartidor: +efectivo (solo lo físico)
-            totalEfectivo += montoEfectivo;
-            cantidadEfectivo++;
-            
-            // Venta Local: +TOTAL COMPLETO (efectivo + transferencia confirmada)
-            totalVentaLocal += total;
-            
-            // Registrar transferencia en la categoría de pagados
-            const montoTransferencia = total - montoEfectivo;
-            if (montoTransferencia > 0) {
-              totalPagados += montoTransferencia;
-              cantidadPagados++;
-            }
-            
-            console.log(`✅ Pago Mixto PAGADO: $${montoEfectivo} efectivo (físico) + $${montoTransferencia} transf (confirmada) | Total: $${total}`);
-          } else {
-            // FALLBACK: Sin número, asumir 100% transferencia pagada
-            console.warn(`⚠️ Pago Mixto Pagado sin monto. Asumiendo todo transferencia. Notas: "${notas}"`);
-            totalPagados += total;
-            cantidadPagados++;
-            totalVentaLocal += total; // Suma al Total Local (ya está confirmado)
-            
-            if (!window.alertaPagoMixtoPagadoMostrada) {
-              window.alertaPagoMixtoPagadoMostrada = true;
-              setTimeout(() => {
-                alert(`⚠️ ATENCIÓN: Pago Mixto Pagado sin monto en notas.\n\nSe asumió como 100% transferencia.\n\nEscribe en notas: "15000 efectivo resto transf"`);
-              }, 500);
-            }
-          }
-        }
-        
-        // CASO 3: Detectar pago mixto antiguo (con emojis) - COMPATIBILIDAD
-        else if (notas.includes('� PAGO MIXTO:') || notas.includes('PAGO MIXTO:')) {
+        if (esPagoMixto) {
+          // Extraer montos de cada método del pago mixto
           const efectivoMatch = notas.match(/💵 Efectivo: \$?([\d,.]+)/);
           const tarjetaMatch = notas.match(/💳 Tarjeta: \$?([\d,.]+)/);
           const transferenciaMatch = notas.match(/🔄 Transferencia: \$?([\d,.]+)/);
-          const transferenciaPagadaMatch = notas.match(/✅ Transferencia PAGADA: \$?([\d,.]+)/);
           
           if (efectivoMatch) {
             const montoEfectivo = parseInt(efectivoMatch[1].replace(/[,\.]/g, '')) || 0;
             totalEfectivo += montoEfectivo;
-            cantidadEfectivo++;
           }
           
           if (tarjetaMatch) {
             const montoTarjeta = parseInt(tarjetaMatch[1].replace(/[,\.]/g, '')) || 0;
             totalTarjetas += montoTarjeta;
-            cantidadTarjetas++;
           }
           
-          // Si la transferencia está PAGADA, va a "Transf. Pagadas"
-          if (transferenciaPagadaMatch) {
-            const montoTransferencia = parseInt(transferenciaPagadaMatch[1].replace(/[,\.]/g, '')) || 0;
-            totalPagados += montoTransferencia;
-            cantidadPagados++;
-          } else if (transferenciaMatch) {
-            // Si está pendiente, va a "Transf. Pendientes"
+          if (transferenciaMatch) {
             const montoTransferencia = parseInt(transferenciaMatch[1].replace(/[,\.]/g, '')) || 0;
             totalTransferencias += montoTransferencia;
-            cantidadTransferencias++;
           }
-          
-          totalVentaLocal += total;
-        }
-        
-        // CASO 4: Pagos simples (Efectivo, Débito, Transferencia, etc.)
-        else {
+          // Pago mixto cuenta como 1 en cada método usado
+          if (efectivoMatch) cantidadEfectivo++;
+          if (tarjetaMatch) cantidadTarjetas++;
+          if (transferenciaMatch) cantidadTransferencias++;
+        } else {
+          // Pago simple (no mixto)
           switch(metodo) {
             case 'E':     // Efectivo
               totalEfectivo += total;
               cantidadEfectivo++;
-              totalVentaLocal += total;
               break;
             case 'DC':    // Débito/Crédito
             case 'D':     // Débito (compatibilidad)
             case 'C':     // Crédito (compatibilidad) 
               totalTarjetas += total;
               cantidadTarjetas++;
-              totalVentaLocal += total;
               break;
             case 'T':     // Transferencia (compatibilidad)
             case 'TP':    // Transferencia Pendiente
               totalTransferencias += total;
               cantidadTransferencias++;
-              totalVentaLocal += total;
               break;
             case 'TG':    // Transferencia Pagada
             case 'P':     // Pagado (compatibilidad)
-              totalPagados += total;
+              totalPagados += total; // Mostrar para cuadre, pero NO suma a Total Recaudado
               cantidadPagados++;
-              totalVentaLocal += total;
               break;
             default:
-              // Método desconocido: asumir efectivo
+              // Si no reconoce el método, asumir efectivo
               totalEfectivo += total;
               cantidadEfectivo++;
-              totalVentaLocal += total;
           }
         }
       }
@@ -3932,13 +4152,6 @@ function actualizarResumenCaja(datos = datosLocal) {
     totalRendirEl.textContent = `$${totalARendir.toLocaleString('es-CL')}`;
   }
   
-  // NUEVO: TOTAL LOCAL (VENTA TOTAL DEL NEGOCIO)
-  // Incluye TODO: efectivo + tarjetas + transferencias + pagados
-  const totalLocalEl = document.getElementById('totalLocal');
-  if (totalLocalEl) {
-    totalLocalEl.textContent = `$${totalVentaLocal.toLocaleString('es-CL')}`;
-  }
-  
   // Mantener compatibilidad con totalGeneral (por si se usa en otra parte)
   const totalGeneralEl = document.getElementById('totalGeneral');
   if (totalGeneralEl) {
@@ -3968,9 +4181,15 @@ function obtenerTextoVenta(pedido) {
   }
   
   const total = parseInt(pedido.total) || 0;
+  
+  // Si no hay método de pago definido pero hay total, mostrar PAGADO
+  if (total > 0 && (!pedido.metodo_pago || pedido.metodo_pago === '' || pedido.metodo_pago === null)) {
+    return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO $${total.toLocaleString('es-CL')}</span>`;
+  }
+  
   if (total > 0) {
     // Obtener el método de pago para mostrar al repartidor
-    const metodo = pedido.metodo_pago || 'E';
+    const metodo = pedido.metodo_pago;
     const metodoTexto = METODOS[metodo] || metodo;
     
     // Agregar emoji según método de pago para fácil identificación
@@ -3995,7 +4214,7 @@ function obtenerTextoVenta(pedido) {
     return `$${total.toLocaleString('es-CL')} (${metodoConIcono})`;
   }
   
-  // Si no hay total definido pero tampoco hay método, asumimos que está pagado
+  // Si no hay total ni método, mostrar PAGADO
   if (!pedido.metodo_pago || pedido.metodo_pago === '' || pedido.metodo_pago === null) {
     return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO</span>`;
   }
@@ -4025,8 +4244,14 @@ async function buscarHistorialPrevio(telefono) {
   contentEl.innerHTML = '<div class="historial-loading">🔍 Buscando historial...</div>';
   
   try {
+    const client = getSupabaseClient();
+    if (!client) {
+      contentEl.innerHTML = '<div class="historial-error">❌ Error de conexión</div>';
+      return;
+    }
+    
     // Buscar pedidos del cliente por teléfono
-    const { data, error } = await supabase_client
+    const { data, error } = await client
       .from('pedidos')
       .select('*')
       .eq('telefono', telefono)
@@ -4491,7 +4716,13 @@ let itemsMarcadosCache = new Set();
  */
 async function cargarItemsMarcados() {
   try {
-    const { data, error } = await supabase_client
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible para cargar items');
+      return itemsMarcadosCache;
+    }
+    
+    const { data, error } = await client
       .from('carga_marcados')
       .select('checkbox_id')
       .eq('marcado', true);
@@ -4517,7 +4748,13 @@ async function agregarItemMarcado(checkboxId) {
   try {
     itemsMarcadosCache.add(checkboxId);
     
-    const { error } = await supabase_client
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible');
+      return;
+    }
+    
+    const { error } = await client
       .from('carga_marcados')
       .upsert({ 
         checkbox_id: checkboxId, 
@@ -4545,7 +4782,13 @@ async function eliminarItemMarcado(checkboxId) {
   try {
     itemsMarcadosCache.delete(checkboxId);
     
-    const { error } = await supabase_client
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible');
+      return;
+    }
+    
+    const { error } = await client
       .from('carga_marcados')
       .delete()
       .eq('checkbox_id', checkboxId);
@@ -4565,8 +4808,14 @@ async function eliminarItemMarcado(checkboxId) {
  */
 async function limpiarItemsMarcados() {
   try {
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible');
+      return;
+    }
+    
     itemsMarcadosCache.clear();
-    const { error } = await supabase_client
+    const { error } = await client
       .from('carga_marcados')
       .delete()
       .neq('checkbox_id', '');
@@ -4588,7 +4837,7 @@ async function limpiarItemsMarcados() {
 /**
  * Toggle del menú de acciones (mostrar/ocultar)
  */
-function toggleMenuAcciones(menuElement, buttonElement) {
+function toggleMenuAcciones(menuElement) {
   if (!menuElement) return;
   
   // Cerrar otros menús abiertos
@@ -4600,21 +4849,7 @@ function toggleMenuAcciones(menuElement, buttonElement) {
   
   // Toggle del menú actual
   const isVisible = menuElement.style.display === 'block';
-  
-  if (isVisible) {
-    menuElement.style.display = 'none';
-  } else {
-    // Calcular posición del botón - MENÚ HACIA LA IZQUIERDA Y ARRIBA
-    const button = buttonElement || menuElement.previousElementSibling;
-    if (button) {
-      const rect = button.getBoundingClientRect();
-      // Posicionar a la izquierda del botón y alineado al fondo (bottom)
-      const menuHeight = 180; // Altura aproximada del menú
-      menuElement.style.top = `${rect.bottom - menuHeight}px`;
-      menuElement.style.left = `${rect.left - 190}px`; // 180px de ancho + 10px de margen
-    }
-    menuElement.style.display = 'block';
-  }
+  menuElement.style.display = isVisible ? 'none' : 'block';
 }
 
 /**
@@ -4718,3 +4953,57 @@ function repetirPedido(pedidoOriginal) {
     ErrorHandler.mostrarExito('✅ Pedido cargado. Revisa los datos y guarda cuando estés listo.');
   }, 100);
 }
+
+// === SELECTOR DE CHOFER - INICIALIZACIÓN ===
+// Esto debe estar AL FINAL para que todas las variables estén definidas
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('=== INICIALIZANDO SELECTOR REPARTIDOR ===');
+  
+  // SELECTOR DE CHOFER: Recargar pedidos cuando se seleccione un repartidor
+  const selectorChofer = document.getElementById('selectorChofer');
+  console.log('🔍 Selector de chofer encontrado:', selectorChofer ? 'SÍ' : 'NO');
+  
+  if (selectorChofer) {
+    // Recuperar perfil guardado de localStorage
+    const perfilGuardado = localStorage.getItem('repartidor_perfil');
+    if (perfilGuardado) {
+      selectorChofer.value = perfilGuardado;
+      console.log('✅ Perfil recuperado de localStorage:', perfilGuardado);
+    }
+    
+    console.log('✅ Agregando listener al selector de chofer');
+    selectorChofer.addEventListener('change', function() {
+      console.log('🚚 ===== EVENTO CHANGE DISPARADO =====');
+      console.log('🚚 Chofer seleccionado:', this.value);
+      
+      // Guardar perfil seleccionado en localStorage
+      if (this.value) {
+        localStorage.setItem('repartidor_perfil', this.value);
+        console.log('💾 Perfil guardado en localStorage');
+      } else {
+        localStorage.removeItem('repartidor_perfil');
+        console.log('🗑️ Perfil eliminado de localStorage');
+      }
+      
+      cargarPedidos(); // Recargar con el nuevo filtro
+    });
+    
+    // También escuchar cuando seleccione del dropdown
+    selectorChofer.addEventListener('click', function() {
+      console.log('🖱️ Click en selector');
+    });
+  } else {
+    console.error('❌ NO SE ENCONTRÓ EL SELECTOR DE CHOFER');
+  }
+  
+  // Llamada inicial para mostrar mensaje de bienvenida (o pedidos si hay perfil guardado)
+  console.log('⏰ Programando carga inicial en 500ms...');
+  setTimeout(() => {
+    console.log('⏰ Ejecutando carga inicial');
+    if (typeof cargarPedidos === 'function') {
+      cargarPedidos();
+    } else {
+      console.error('❌ cargarPedidos no es una función');
+    }
+  }, 500);
+});
