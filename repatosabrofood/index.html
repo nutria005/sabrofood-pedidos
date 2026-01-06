@@ -430,7 +430,8 @@
               
             } else {
               // Email no autorizado
-              alert('❌ Usuario no autorizado para acceder al sistema');
+              errorMsg.textContent = '❌ Usuario no autorizado para acceder al sistema';
+              errorMsg.style.display = 'block';
               await supabaseLogout();
               // Limpiar formulario
               document.getElementById('emailInput').value = '';

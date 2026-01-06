@@ -257,6 +257,9 @@ async function verificarPermisoLocal() {
     
     // Solo admin puede acceder a Local
     if (!ROLES_CONFIG.esAdmin(user.email)) {
+      // Usando alert() aquí porque es una verificación de seguridad crítica
+      // que requiere atención inmediata antes de la redirección.
+      // ErrorHandler podría no estar disponible en este punto temprano del ciclo de vida.
       alert('❌ No tienes permisos para acceder al panel de administración');
       await supabaseLogout();
       window.location.href = '../index.html';

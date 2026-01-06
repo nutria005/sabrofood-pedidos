@@ -11,8 +11,14 @@ const ROLES_CONFIG = {
   // Email del repartidor con acceso limitado
   REPARTIDOR_EMAIL: 'repartidor@sabrofood.com',
   
-  // Lista de emails autorizados para panel de repartidor
-  EMAILS_PANEL_REPARTIDOR: ['admin@sabrofood.com', 'repartidor@sabrofood.com'],
+  /**
+   * Lista de emails autorizados para panel de repartidor
+   * Se genera dinámicamente a partir de los emails definidos
+   * @returns {string[]}
+   */
+  get EMAILS_PANEL_REPARTIDOR() {
+    return [this.ADMIN_EMAIL, this.REPARTIDOR_EMAIL];
+  },
   
   /**
    * Verificar si un email es el administrador

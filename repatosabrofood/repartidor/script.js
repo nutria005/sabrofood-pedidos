@@ -256,6 +256,9 @@ async function verificarPermisoRepartidor() {
     
     // Admin y repartidor pueden acceder
     if (!ROLES_CONFIG.puedeAccederPanelRepartidor(user.email)) {
+      // Usando alert() aquí porque es una verificación de seguridad crítica
+      // que requiere atención inmediata antes de la redirección.
+      // ErrorHandler podría no estar disponible en este punto temprano del ciclo de vida.
       alert('❌ No tienes permisos para acceder al panel de repartidor');
       await supabaseLogout();
       window.location.href = '../index.html';
