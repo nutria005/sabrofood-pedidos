@@ -7,21 +7,39 @@
  * @returns {Promise<boolean>} true si la sesión es válida
  */
 async function verificarSesion() {
-  // Usar función de Supabase
-  if (typeof supabaseVerificarSesion !== 'undefined') {
+  // Verificar que la función de Supabase esté disponible
+  if (typeof supabaseVerificarSesion !== 'function') {
+    console.error('❌ supabaseVerificarSesion no está disponible. Asegúrate de incluir supabase-config.js');
+    return false;
+  }
+  
+  try {
     const resultado = await supabaseVerificarSesion();
     return resultado.authenticated;
+  } catch (error) {
+    console.error('❌ Error al verificar sesión:', error);
+    return false;
   }
-  return false;
 }
 
 /**
  * Cierra la sesión actual usando Supabase Auth
  */
 async function cerrarSesion() {
-  if (typeof supabaseLogout !== 'undefined') {
-    await supabaseLogout();
+  // Verificar que la función de Supabase esté disponible
+  if (typeof supabaseLogout !== 'function') {
+    console.error('❌ supabaseLogout no está disponible. Asegúrate de incluir supabase-config.js');
+    // Forzar redirección de todos modos
+    window.location.href = '/repatosabrofood/index.html';
+    return;
   }
+  
+  try {
+    await supabaseLogout();
+  } catch (error) {
+    console.error('❌ Error al cerrar sesión:', error);
+  }
+  
   // Redirigir al login
   window.location.href = '/repatosabrofood/index.html';
 }

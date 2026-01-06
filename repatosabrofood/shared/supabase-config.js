@@ -27,19 +27,28 @@ if (typeof window !== 'undefined') {
 
 /**
  * Realizar login con email y password usando Supabase Auth
- * @param {string} email - Email del usuario
- * @param {string} password - Contraseña
- * @returns {Promise<{success: boolean, error?: string}>}
+ * @param {string} email - Email del usuario (debe ser válido y no vacío)
+ * @param {string} password - Contraseña (mínimo 6 caracteres)
+ * @returns {Promise<{success: boolean, user?: object, session?: object, error?: string}>}
  */
 async function supabaseLogin(email, password) {
   try {
+    // Validación de parámetros
+    if (!email || typeof email !== 'string' || email.trim().length === 0) {
+      return { success: false, error: 'Email es requerido' };
+    }
+    
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return { success: false, error: 'Contraseña debe tener al menos 6 caracteres' };
+    }
+    
     const client = inicializarSupabase();
     if (!client) {
       return { success: false, error: 'Cliente Supabase no inicializado' };
     }
 
     const { data, error } = await client.auth.signInWithPassword({
-      email: email,
+      email: email.trim(),
       password: password
     });
 

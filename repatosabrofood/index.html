@@ -366,13 +366,20 @@
       
       if (!supabaseClient) {
         console.error('❌ No se pudo inicializar Supabase');
+        document.getElementById('errorMessage').textContent = '⚠️ Error de configuración. Por favor, recarga la página.';
+        document.getElementById('errorMessage').style.display = 'block';
         return;
       }
 
       // Verificar si ya hay una sesión activa
-      const sesionActual = await supabaseVerificarSesion();
-      if (sesionActual.authenticated) {
-        mostrarSeleccionRol();
+      try {
+        const sesionActual = await supabaseVerificarSesion();
+        if (sesionActual.authenticated) {
+          mostrarSeleccionRol();
+        }
+      } catch (error) {
+        console.error('❌ Error al verificar sesión:', error);
+        // No mostrar error al usuario, simplemente mostrar login
       }
     });
 
@@ -397,13 +404,15 @@
         } else {
           errorMsg.textContent = '❌ Email o contraseña incorrectos';
           errorMsg.style.display = 'block';
-          document.getElementById('emailInput').value = '';
+          // Solo limpiar contraseña, mantener email para mejor UX
           document.getElementById('passwordInput').value = '';
-          document.getElementById('emailInput').focus();
+          document.getElementById('passwordInput').focus();
         }
       } catch (error) {
         errorMsg.textContent = '❌ Error al iniciar sesión';
         errorMsg.style.display = 'block';
+        // Limpiar solo contraseña en caso de error
+        document.getElementById('passwordInput').value = '';
       } finally {
         btnLogin.disabled = false;
         btnLogin.textContent = '🔓 Ingresar';
