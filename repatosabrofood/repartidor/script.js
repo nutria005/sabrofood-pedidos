@@ -3803,9 +3803,9 @@ function inicializarAppCompleta() {
   // Botón cerrar sesión
   const btnCerrarSesion = document.getElementById('btnCerrarSesion');
   if (btnCerrarSesion) {
-    btnCerrarSesion.onclick = () => {
-      localStorage.removeItem(CONFIG_SEGURIDAD.sessionKey);
-      window.location.href = '../index-NEW.html';
+    btnCerrarSesion.onclick = async (e) => {
+      e.preventDefault();
+      await cerrarSesion();
     };
   }
   
