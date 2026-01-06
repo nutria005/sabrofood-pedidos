@@ -277,8 +277,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   
   // Verificar permisos antes de continuar
-  const tienePermiso = await verificarPermisoLocal();
-  if (!tienePermiso) return;
+  try {
+    const tienePermiso = await verificarPermisoLocal();
+    if (!tienePermiso) return;
+  } catch (error) {
+    console.error('❌ Error al verificar permisos:', error);
+    alert('❌ Error al verificar permisos de acceso. Redirigiendo a login...');
+    window.location.href = '../index.html';
+    return;
+  }
   
   OfflineManager.actualizarEstadoConexion();
   OfflineManager.actualizarContadorCola();

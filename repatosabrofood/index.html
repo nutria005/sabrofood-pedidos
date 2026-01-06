@@ -415,24 +415,30 @@
           errorMsg.style.display = 'none';
           
           // Obtener información del usuario autenticado
-          const { data: { user } } = await supabaseClient.auth.getUser();
-          
-          // Redirección basada en email (roles automáticos)
-          if (user.email === 'admin@sabrofood.com') {
-            // Admin puede elegir - mostrar pantalla de selección
-            mostrarSeleccionRol();
+          try {
+            const { data: { user } } = await supabaseClient.auth.getUser();
             
-          } else if (user.email === 'repartidor@sabrofood.com') {
-            // Repartidor va directo a su panel
-            window.location.href = './repartidor/index.html';
-            
-          } else {
-            // Email no autorizado
-            alert('❌ Usuario no autorizado para acceder al sistema');
-            await supabaseLogout();
-            // Limpiar formulario
-            document.getElementById('emailInput').value = '';
-            document.getElementById('passwordInput').value = '';
+            // Redirección basada en email (roles automáticos)
+            if (user.email === 'admin@sabrofood.com') {
+              // Admin puede elegir - mostrar pantalla de selección
+              mostrarSeleccionRol();
+              
+            } else if (user.email === 'repartidor@sabrofood.com') {
+              // Repartidor va directo a su panel
+              window.location.href = './repartidor/index.html';
+              
+            } else {
+              // Email no autorizado
+              alert('❌ Usuario no autorizado para acceder al sistema');
+              await supabaseLogout();
+              // Limpiar formulario
+              document.getElementById('emailInput').value = '';
+              document.getElementById('passwordInput').value = '';
+            }
+          } catch (authError) {
+            console.error('❌ Error al obtener información del usuario:', authError);
+            errorMsg.textContent = '❌ Error al procesar autenticación';
+            errorMsg.style.display = 'block';
           }
         } else {
           errorMsg.textContent = '❌ Email o contraseña incorrectos';
