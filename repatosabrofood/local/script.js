@@ -241,8 +241,41 @@ window.addEventListener('offline', () => {
   ErrorHandler.mostrarWarning('⚠️ Sin conexión. Las acciones se guardarán localmente.');
 });
 
+// === VERIFICACIÓN DE PERMISOS ===
+/**
+ * Verificar que el usuario tenga permisos para acceder al panel de administración (Local)
+ * Solo admin@sabrofood.com puede acceder
+ */
+async function verificarPermisoLocal() {
+  try {
+    const { data: { user } } = await supabase_client.auth.getUser();
+    
+    if (!user) {
+      window.location.href = '../index.html';
+      return false;
+    }
+    
+    // Solo admin puede acceder a Local
+    if (!ROLES_CONFIG.esAdmin(user.email)) {
+      // Usando alert() aquí porque es una verificación de seguridad crítica
+      // que requiere atención inmediata antes de la redirección.
+      // ErrorHandler podría no estar disponible en este punto temprano del ciclo de vida.
+      alert('❌ No tienes permisos para acceder al panel de administración');
+      await supabaseLogout();
+      window.location.href = '../index.html';
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Error al verificar permisos:', error);
+    window.location.href = '../index.html';
+    return false;
+  }
+}
+
 // Inicializar estado de conexión al cargar
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // Inicializar Supabase client desde shared config
   supabase_client = inicializarSupabase();
   
@@ -251,6 +284,10 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     console.error('❌ Error: No se pudo inicializar Supabase');
   }
+  
+  // Verificar permisos antes de continuar (ya incluye manejo de errores interno)
+  const tienePermiso = await verificarPermisoLocal();
+  if (!tienePermiso) return;
   
   OfflineManager.actualizarEstadoConexion();
   OfflineManager.actualizarContadorCola();

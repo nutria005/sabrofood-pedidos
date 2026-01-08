@@ -77,6 +77,34 @@ const SUPABASE_CONFIG = {
 
 ### 🔒 Seguridad
 
+### Roles de usuario
+
+- **Admin** (`admin@sabrofood.com`): Acceso completo al sistema
+  - Panel de administración local
+  - Panel de repartidor (para supervisión)
+  - Crear, editar, eliminar pedidos
+  
+- **Repartidor** (`repartidor@sabrofood.com`): Acceso limitado
+  - Solo panel de repartidor
+  - Ver pedidos asignados
+  - Marcar entregas como completadas
+  - NO puede crear ni eliminar pedidos
+
+### Protección implementada
+
+1. **Redirección automática:** Cada usuario va a su panel correspondiente
+2. **Validación en frontend:** Verifica permisos antes de mostrar interfaces
+3. **Row Level Security (RLS):** Protección a nivel de base de datos en Supabase
+
+### Configurar Row Level Security
+
+Después del primer deploy, sigue las instrucciones en:
+📄 `repatosabrofood/docs/SETUP-RLS.md`
+
+Esto protege tu base de datos incluso si alguien intenta acceder directamente a la API.
+
+### Flujo de autenticación
+
 - Las credenciales se manejan a través de Supabase Authentication
 - Las sesiones son persistentes y se validan en cada carga de página
 - Las rutas protegidas redirigen automáticamente al login si no hay sesión activa

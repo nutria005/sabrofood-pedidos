@@ -356,6 +356,7 @@
   </div>
 
   <script src="shared/supabase-config.js"></script>
+  <script src="shared/roles-config.js"></script>
   <script>
     // === AUTENTICACIÓN CON SUPABASE ===
     let supabaseClient = null;
@@ -375,7 +376,20 @@
       try {
         const sesionActual = await supabaseVerificarSesion();
         if (sesionActual.authenticated) {
-          mostrarSeleccionRol();
+          // Aplicar redirección basada en roles
+          const userEmail = sesionActual.user?.email;
+          
+          if (ROLES_CONFIG.esAdmin(userEmail)) {
+            // Admin ve pantalla de selección
+            mostrarSeleccionRol();
+          } else if (ROLES_CONFIG.esRepartidor(userEmail)) {
+            // Repartidor va directo a su panel
+            window.location.href = './repartidor/index.html';
+          } else {
+            // Usuario no autorizado - cerrar sesión
+            console.warn('⚠️ Usuario no autorizado:', userEmail);
+            await supabaseLogout();
+          }
         }
       } catch (error) {
         console.error('❌ Error al verificar sesión:', error);
@@ -400,7 +414,34 @@
         
         if (resultado.success) {
           errorMsg.style.display = 'none';
-          mostrarSeleccionRol();
+          
+          // Obtener información del usuario autenticado
+          try {
+            const { data: { user } } = await supabaseClient.auth.getUser();
+            
+            // Redirección basada en email (roles automáticos)
+            if (ROLES_CONFIG.esAdmin(user.email)) {
+              // Admin puede elegir - mostrar pantalla de selección
+              mostrarSeleccionRol();
+              
+            } else if (ROLES_CONFIG.esRepartidor(user.email)) {
+              // Repartidor va directo a su panel
+              window.location.href = './repartidor/index.html';
+              
+            } else {
+              // Email no autorizado
+              errorMsg.textContent = '❌ Usuario no autorizado para acceder al sistema';
+              errorMsg.style.display = 'block';
+              await supabaseLogout();
+              // Limpiar formulario
+              document.getElementById('emailInput').value = '';
+              document.getElementById('passwordInput').value = '';
+            }
+          } catch (authError) {
+            console.error('❌ Error al obtener información del usuario:', authError);
+            errorMsg.textContent = '❌ Error al procesar autenticación';
+            errorMsg.style.display = 'block';
+          }
         } else {
           errorMsg.textContent = '❌ Email o contraseña incorrectos';
           errorMsg.style.display = 'block';

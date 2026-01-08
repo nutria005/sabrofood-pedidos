@@ -240,8 +240,41 @@ window.addEventListener('offline', () => {
   ErrorHandler.mostrarWarning('⚠️ Sin conexión. Las acciones se guardarán localmente.');
 });
 
+// === VERIFICACIÓN DE PERMISOS ===
+/**
+ * Verificar que el usuario tenga permisos para acceder al panel de repartidor
+ * Admin y repartidor pueden acceder
+ */
+async function verificarPermisoRepartidor() {
+  try {
+    const { data: { user } } = await supabase_client.auth.getUser();
+    
+    if (!user) {
+      window.location.href = '../index.html';
+      return false;
+    }
+    
+    // Admin y repartidor pueden acceder
+    if (!ROLES_CONFIG.puedeAccederPanelRepartidor(user.email)) {
+      // Usando alert() aquí porque es una verificación de seguridad crítica
+      // que requiere atención inmediata antes de la redirección.
+      // ErrorHandler podría no estar disponible en este punto temprano del ciclo de vida.
+      alert('❌ No tienes permisos para acceder al panel de repartidor');
+      await supabaseLogout();
+      window.location.href = '../index.html';
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Error al verificar permisos:', error);
+    window.location.href = '../index.html';
+    return false;
+  }
+}
+
 // Inicializar estado de conexión al cargar
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // Inicializar Supabase client desde shared config
   supabase_client = inicializarSupabase();
   
@@ -250,6 +283,10 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     console.error('❌ Error: No se pudo inicializar Supabase');
   }
+  
+  // Verificar permisos antes de continuar (ya incluye manejo de errores interno)
+  const tienePermiso = await verificarPermisoRepartidor();
+  if (!tienePermiso) return;
   
   OfflineManager.actualizarEstadoConexion();
   OfflineManager.actualizarContadorCola();
