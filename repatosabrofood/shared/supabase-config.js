@@ -29,9 +29,10 @@ if (typeof window !== 'undefined') {
  * Realizar login con email y password usando Supabase Auth
  * @param {string} email - Email del usuario (debe ser válido y no vacío)
  * @param {string} password - Contraseña (mínimo 6 caracteres)
+ * @param {boolean} remember - Si es true, sesión dura 30 días, si no, solo mientras el navegador esté abierto
  * @returns {Promise<{success: boolean, user?: object, session?: object, error?: string}>}
  */
-async function supabaseLogin(email, password) {
+async function supabaseLogin(email, password, remember = true) {
   try {
     // Validación de parámetros
     if (!email || typeof email !== 'string' || email.trim().length === 0) {
@@ -49,7 +50,11 @@ async function supabaseLogin(email, password) {
 
     const { data, error } = await client.auth.signInWithPassword({
       email: email.trim(),
-      password: password
+      password: password,
+      options: {
+        // Si remember=true, sesión dura 30 días, si no, solo mientras el navegador esté abierto
+        persistSession: remember
+      }
     });
 
     if (error) {
@@ -59,6 +64,17 @@ async function supabaseLogin(email, password) {
 
     if (data.session) {
       console.log('✅ Login exitoso:', data.user.email);
+      
+      // Guardar email para autocompletar (siempre)
+      localStorage.setItem('sabrofood_last_email', email.trim());
+      
+      // Guardar preferencia de "recordar" 
+      if (remember) {
+        localStorage.setItem('sabrofood_remember_device', 'true');
+      } else {
+        localStorage.removeItem('sabrofood_remember_device');
+      }
+      
       return { success: true, user: data.user, session: data.session };
     }
 

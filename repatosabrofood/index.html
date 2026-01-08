@@ -274,12 +274,28 @@
         padding: 32px 24px;
       }
     }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
 
   <!-- Pantalla de Login -->
   <div class="container">
+    <!-- MENSAJE DE AUTO-LOGIN -->
+    <div id="autoLoginMessage" style="display: none; text-align: center; padding: 20px; background: #d1fae5; border-radius: 10px; margin-bottom: 20px;">
+      <div style="border: 3px solid #f3f4f6; border-top: 3px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px;"></div>
+      <div style="font-weight: 600; color: #065f46;">
+        🔐 Iniciando sesión automáticamente...
+      </div>
+      <div style="font-size: 12px; color: #047857; margin-top: 5px;">
+        Dispositivo recordado
+      </div>
+    </div>
+    
     <div class="login-screen" id="loginScreen">
       <h1>🐶 Sistema de Pedidos</h1>
       <p>Ingresa tus credenciales para acceder</p>
@@ -303,6 +319,29 @@
             autocomplete="current-password"
             required
           />
+        </div>
+        
+        <!-- CHECKBOX RECORDAR DISPOSITIVO -->
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 24px; padding: 12px; background: #f9fafb; border-radius: 10px; border: 2px solid #e5e7eb;">
+          <input 
+            type="checkbox" 
+            id="rememberDevice" 
+            style="width: 20px; height: 20px; cursor: pointer; accent-color: #667eea;"
+            checked
+          >
+          <label for="rememberDevice" style="font-size: 14px; color: #374151; cursor: pointer; user-select: none; flex: 1;">
+            🔒 Recordar en este dispositivo
+          </label>
+          <div style="position: relative; display: inline-block;">
+            <div style="width: 18px; height: 18px; background: #667eea; color: white; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; cursor: help;" title="Tu sesión permanecerá activa por 30 días">
+              ℹ️
+            </div>
+          </div>
+        </div>
+
+        <!-- NOTA DE SEGURIDAD -->
+        <div style="margin-top: 20px; padding: 12px; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 8px; font-size: 12px; color: #92400e;">
+          <strong>🔒 Seguridad:</strong> Tu contraseña nunca se guarda. Solo se almacena una sesión encriptada de Supabase.
         </div>
         
         <div class="error-message" id="errorMessage"></div>
@@ -361,7 +400,19 @@
     // === AUTENTICACIÓN CON SUPABASE ===
     let supabaseClient = null;
 
-    // Inicializar cliente Supabase
+    // Función auxiliar para verificar rol y redirigir
+    function verificarRolYRedirigir(user) {
+      if (ROLES_CONFIG.esAdmin(user.email)) {
+        mostrarSeleccionRol();
+      } else if (ROLES_CONFIG.esRepartidor(user.email)) {
+        window.location.href = './repartidor/index.html';
+      } else {
+        alert('❌ Usuario no autorizado');
+        supabaseLogout();
+      }
+    }
+
+    // Inicializar cliente Supabase y verificar auto-login
     window.addEventListener('DOMContentLoaded', async () => {
       supabaseClient = inicializarSupabase();
       
@@ -372,28 +423,68 @@
         return;
       }
 
-      // Verificar si ya hay una sesión activa
-      try {
+      // === AUTO-COMPLETAR EMAIL Y VERIFICAR AUTO-LOGIN ===
+      const emailInput = document.getElementById('emailInput');
+      const passwordInput = document.getElementById('passwordInput');
+      const loginFormDiv = document.getElementById('loginScreen');
+      const autoLoginMessage = document.getElementById('autoLoginMessage');
+      
+      // Auto-completar email si existe
+      const savedEmail = localStorage.getItem('sabrofood_last_email');
+      if (savedEmail && emailInput) {
+        emailInput.value = savedEmail;
+      }
+      
+      // Verificar si hay sesión activa (auto-login)
+      const rememberDevice = localStorage.getItem('sabrofood_remember_device') === 'true';
+      
+      if (rememberDevice) {
+        // Mostrar mensaje de auto-login
+        if (loginFormDiv) loginFormDiv.style.display = 'none';
+        if (autoLoginMessage) autoLoginMessage.style.display = 'block';
+        
+        // Verificar sesión en Supabase
         const sesionActual = await supabaseVerificarSesion();
+        
         if (sesionActual.authenticated) {
-          // Aplicar redirección basada en roles
-          const userEmail = sesionActual.user?.email;
+          // Sesión válida - redirigir automáticamente
+          console.log('✅ Auto-login exitoso');
           
-          if (ROLES_CONFIG.esAdmin(userEmail)) {
-            // Admin ve pantalla de selección
-            mostrarSeleccionRol();
-          } else if (ROLES_CONFIG.esRepartidor(userEmail)) {
-            // Repartidor va directo a su panel
-            window.location.href = './repartidor/index.html';
-          } else {
-            // Usuario no autorizado - cerrar sesión
-            console.warn('⚠️ Usuario no autorizado:', userEmail);
-            await supabaseLogout();
-          }
+          // Esperar 1 segundo para que el usuario vea el mensaje
+          setTimeout(() => {
+            // Verificar rol y redirigir
+            verificarRolYRedirigir(sesionActual.user);
+          }, 1000);
+        } else {
+          // Sesión expirada - mostrar formulario
+          console.log('⚠️ Sesión expirada, mostrando login');
+          if (loginFormDiv) loginFormDiv.style.display = 'block';
+          if (autoLoginMessage) autoLoginMessage.style.display = 'none';
         }
-      } catch (error) {
-        console.error('❌ Error al verificar sesión:', error);
-        // No mostrar error al usuario, simplemente mostrar login
+      } else {
+        // Sin preferencia de recordar - verificar sesión normal sin auto-login
+        try {
+          const sesionActual = await supabaseVerificarSesion();
+          if (sesionActual.authenticated) {
+            // Aplicar redirección basada en roles
+            const userEmail = sesionActual.user?.email;
+            
+            if (ROLES_CONFIG.esAdmin(userEmail)) {
+              // Admin ve pantalla de selección
+              mostrarSeleccionRol();
+            } else if (ROLES_CONFIG.esRepartidor(userEmail)) {
+              // Repartidor va directo a su panel
+              window.location.href = './repartidor/index.html';
+            } else {
+              // Usuario no autorizado - cerrar sesión
+              console.warn('⚠️ Usuario no autorizado:', userEmail);
+              await supabaseLogout();
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error al verificar sesión:', error);
+          // No mostrar error al usuario, simplemente mostrar login
+        }
       }
     });
 
@@ -402,6 +493,7 @@
       e.preventDefault();
       const email = document.getElementById('emailInput').value;
       const password = document.getElementById('passwordInput').value;
+      const remember = document.getElementById('rememberDevice').checked;
       const errorMsg = document.getElementById('errorMessage');
       const btnLogin = e.target.querySelector('.btn-login');
       
@@ -410,7 +502,7 @@
       btnLogin.textContent = '⏳ Ingresando...';
       
       try {
-        const resultado = await supabaseLogin(email, password);
+        const resultado = await supabaseLogin(email, password, remember);
         
         if (resultado.success) {
           errorMsg.style.display = 'none';
@@ -420,23 +512,8 @@
             const { data: { user } } = await supabaseClient.auth.getUser();
             
             // Redirección basada en email (roles automáticos)
-            if (ROLES_CONFIG.esAdmin(user.email)) {
-              // Admin puede elegir - mostrar pantalla de selección
-              mostrarSeleccionRol();
-              
-            } else if (ROLES_CONFIG.esRepartidor(user.email)) {
-              // Repartidor va directo a su panel
-              window.location.href = './repartidor/index.html';
-              
-            } else {
-              // Email no autorizado
-              errorMsg.textContent = '❌ Usuario no autorizado para acceder al sistema';
-              errorMsg.style.display = 'block';
-              await supabaseLogout();
-              // Limpiar formulario
-              document.getElementById('emailInput').value = '';
-              document.getElementById('passwordInput').value = '';
-            }
+            verificarRolYRedirigir(user);
+            
           } catch (authError) {
             console.error('❌ Error al obtener información del usuario:', authError);
             errorMsg.textContent = '❌ Error al procesar autenticación';
@@ -478,6 +555,9 @@
     // Cerrar sesión completa
     async function cerrarSesionCompleta() {
       if (confirm('¿Seguro que deseas cerrar sesión?')) {
+        // Limpiar preferencia de "recordar dispositivo"
+        localStorage.removeItem('sabrofood_remember_device');
+        
         await supabaseLogout();
         window.location.reload();
       }

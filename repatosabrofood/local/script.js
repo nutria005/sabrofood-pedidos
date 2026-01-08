@@ -802,6 +802,9 @@ function ordenarPorRuta(pedidos) {
 async function cerrarSesion() {
   try {
     if (confirm('¿Estás seguro de que quieres cerrar la sesión?')) {
+      // Limpiar preferencia de "recordar dispositivo"
+      localStorage.removeItem('sabrofood_remember_device');
+      
       // Cerrar sesión en Supabase
       if (typeof supabaseLogout !== 'undefined') {
         await supabaseLogout();
