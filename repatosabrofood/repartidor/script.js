@@ -827,12 +827,12 @@ async function cerrarSesion() {
       }
       
       // Redirigir al login
-      window.location.href = '/repatosabrofood/index.html';
+      window.location.href = '../index.html';
     }
   } catch (error) {
     console.error('Error al cerrar sesión:', error);
     // Si falla, forzar redirección al login
-    window.location.href = '/repatosabrofood/index.html';
+    window.location.href = '../index.html';
   }
 }
 
