@@ -2841,7 +2841,7 @@ function nextBusinessDayISO(isoDate){
   return formatDateISO(dt);
 }
 
-// Validar que la fecha no sea domingo
+// Validar fecha de entrega
 function validarFechaEntrega() {
   const inp = getFechaEntregaElement();
   if (!inp || !inp.value) return;
@@ -3536,7 +3536,7 @@ function getFechaFormateada(fecha) {
   return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')}`;
 }
 
-// Función para obtener fecha de mañana (saltando domingos)
+// Función para obtener fecha de mañana
 function getFechaManana() {
   const manana = new Date();
   manana.setDate(manana.getDate() + 1);
@@ -3813,7 +3813,7 @@ function inicializarAppCompleta() {
     };
   }
   
-  // Validación de fecha de entrega (no domingos)
+  // Validación de fecha de entrega
   const fechaEntrega = document.getElementById('fechaEntrega');
   if (fechaEntrega) {
     fechaEntrega.addEventListener('change', validarFechaEntrega);
@@ -3846,7 +3846,7 @@ function inicializarAppCompleta() {
     };
   }
   
-  // Establecer fecha por defecto (hoy, evitando domingos)
+  // Establecer fecha por defecto (hoy)
   setFechaHoyDefault();
   
   // Cargar pedidos iniciales
