@@ -2,7 +2,17 @@
 
 Sistema web para gestionar pedidos de delivery con dos paneles:  uno para administración y otro para repartidores.
 
+---
+
+## 📱 ¿Trabajar desde tu móvil?
+
+**¡SÍ! Ahora puedes editar este repositorio desde tu teléfono.**
+
+### Abre el entorno de desarrollo:
+
 [![Abrir en Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/nutria005/sabrofood-pedidos) [![Abrir en GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=nutria005/sabrofood-pedidos)
+
+📖 **Guía completa**: [docs/DESARROLLO-MOVIL.md](docs/DESARROLLO-MOVIL.md) | 🚀 **Inicio rápido**: [docs/INICIO-RAPIDO-MOVIL.md](docs/INICIO-RAPIDO-MOVIL.md)
 
 ---
 
