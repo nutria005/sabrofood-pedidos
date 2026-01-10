@@ -1,0 +1,48 @@
+# Gitpod Configuration - Desarrollo desde Móvil
+# Abre este repositorio en Gitpod: https://gitpod.io/#https://github.com/nutria005/sabrofood-pedidos
+
+image:
+  file: .gitpod.Dockerfile
+
+tasks:
+  - name: Bienvenida
+    init: |
+      echo "🎉 Bienvenido al entorno de desarrollo de Sabrofood Pedidos"
+      echo "📱 Optimizado para trabajo desde dispositivos móviles"
+      echo ""
+      echo "🚀 Comandos útiles:"
+      echo "  - Abrir con Live Server: Click derecho en index.html"
+      echo "  - Ver en navegador: Hacer clic en el puerto 5500"
+      echo ""
+      echo "✨ Tu entorno está listo para empezar"
+    command: |
+      gp sync-done setup
+
+ports:
+  - port: 5500
+    onOpen: notify
+    name: Live Server
+    description: Servidor de desarrollo para la aplicación
+  - port: 3000
+    onOpen: ignore
+    name: Desarrollo
+  - port: 8000
+    onOpen: ignore
+    name: Servidor alternativo
+
+vscode:
+  extensions:
+    - dbaeumer.vscode-eslint
+    - esbenp.prettier-vscode
+    - ritwickdey.liveserver
+    - formulahendry.auto-rename-tag
+    - bradlc.vscode-tailwindcss
+
+github:
+  prebuilds:
+    master: true
+    branches: true
+    pullRequests: true
+    pullRequestsFromForks: false
+    addCheck: false
+    addComment: false
