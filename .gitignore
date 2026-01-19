@@ -1,8 +1,0 @@
-__pycache__/
-*.pyc
-.DS_Store
-node_modules/
-
-# Archivos con credenciales sensibles
-repatosabrofood/shared/supabase-config.js
-supabase-config.js
