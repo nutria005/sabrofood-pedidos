@@ -1333,6 +1333,12 @@ async function guardarPedido() {
     const [nombreEl, direccionEl, telefonoEl, fechaEl, metodoEl, notasEl, rutaEl, asignadoEl] = 
       getElements('nombre', 'direccion', 'telefono', 'fechaEntrega', 'metodoPago', 'notas', 'rutaSelect', 'asignadoA');
     
+    // Validación CRÍTICA: Verificar que se haya seleccionado un método de pago
+    if (!metodoEl.value || metodoEl.value === '') {
+      ErrorHandler.mostrarError('¡ERROR! Debes seleccionar un método de pago antes de agendar.');
+      return;
+    }
+    
     // Validar todos los campos
     const validaciones = {
       nombre: Validator.validarNombre(nombreEl.value),
@@ -2804,6 +2810,18 @@ function limpiarFormulario() {
   renderLineasPedido();
   setFechaHoyDefault();
   
+  // Establecer chofer por defecto
+  const choferSelect = document.getElementById('asignadoA');
+  if (choferSelect) {
+    choferSelect.value = 'repartidor_1';
+  }
+  
+  // Resetear método de pago a opción por defecto (obligar selección manual)
+  const metodoPagoSelect = document.getElementById('metodoPago');
+  if (metodoPagoSelect) {
+    metodoPagoSelect.value = '';
+  }
+  
   // Limpiar preview de historial
   const previewEl = document.getElementById('historialPreview');
   if (previewEl) {
@@ -3266,6 +3284,12 @@ function abrirModalFormulario() {
   const [backdropEl, modalEl] = getElements('formModalBackdrop', 'formModal');
   backdropEl.style.display = 'flex';
   setTimeout(() => { modalEl.classList.add('show'); }, 10);
+  
+  // Establecer chofer por defecto
+  const choferSelect = document.getElementById('asignadoA');
+  if (choferSelect) {
+    choferSelect.value = 'repartidor_1';
+  }
 }
 
 function closeFormModal(){
@@ -4117,10 +4141,11 @@ function copiarDatosHistorial(nombre, direccion, metodoPago) {
     direccionInput.value = direccion;
   }
   
-  // Copiar método de pago (opcional, por si el cliente siempre paga igual)
+  // NO copiar método de pago - El operador debe seleccionarlo manualmente
+  // para evitar errores al marcar pedidos como "Pagados" por defecto
   const metodoPagoSelect = document.getElementById('metodoPago');
-  if (metodoPagoSelect && metodoPago) {
-    metodoPagoSelect.value = metodoPago;
+  if (metodoPagoSelect) {
+    metodoPagoSelect.value = ''; // Resetear a la opción por defecto
   }
   
   // Mostrar notificación de éxito
@@ -4737,3 +4762,446 @@ function repetirPedido(pedidoOriginal) {
     ErrorHandler.mostrarExito('✅ Pedido cargado. Revisa los datos y guarda cuando estés listo.');
   }, 100);
 }
+
+// ========================================
+// MÓDULO DE HISTORIAL COMPLETO
+// ========================================
+
+let todosLosPedidos = [];
+let pedidosFiltrados = [];
+let modoVIP = false;
+
+/**
+ * Abrir modal de historial completo
+ */
+async function abrirHistorialCompleto() {
+  const modal = document.getElementById('modalHistorialCompleto');
+  modal.style.display = 'flex';
+  
+  // Establecer fechas por defecto (últimos 30 días)
+  const hoy = new Date();
+  const hace30Dias = new Date();
+  hace30Dias.setDate(hoy.getDate() - 30);
+  
+  document.getElementById('fechaHasta').value = hoy.toISOString().split('T')[0];
+  document.getElementById('fechaDesde').value = hace30Dias.toISOString().split('T')[0];
+  
+  // Cargar datos
+  await cargarHistorialCompleto();
+}
+
+/**
+ * Cerrar modal de historial completo
+ */
+function cerrarHistorialCompleto() {
+  const modal = document.getElementById('modalHistorialCompleto');
+  modal.style.display = 'none';
+  
+  // Resetear filtros
+  document.getElementById('buscarHistorial').value = '';
+  modoVIP = false;
+}
+
+/**
+ * Cargar todos los pedidos de Supabase
+ */
+async function cargarHistorialCompleto() {
+  try {
+    const fechaDesde = document.getElementById('fechaDesde').value;
+    const fechaHasta = document.getElementById('fechaHasta').value;
+    
+    let query = supabase_client
+      .from('pedidos')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    // Aplicar filtros de fecha si existen
+    if (fechaDesde) {
+      query = query.gte('created_at', fechaDesde + 'T00:00:00');
+    }
+    
+    if (fechaHasta) {
+      query = query.lte('created_at', fechaHasta + 'T23:59:59');
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) {
+      console.error('Error al cargar historial:', error);
+      ErrorHandler.mostrarError('Error al cargar el historial completo');
+      return;
+    }
+    
+    todosLosPedidos = data || [];
+    pedidosFiltrados = [...todosLosPedidos];
+    
+    // Actualizar estadísticas
+    actualizarEstadisticas();
+    
+    // Mostrar productos top
+    mostrarTopProductos();
+    
+    // Renderizar según modo actual
+    if (modoVIP) {
+      renderizarRankingVIP();
+    } else {
+      renderizarHistorialCronologico();
+    }
+    
+  } catch (error) {
+    console.error('Error inesperado:', error);
+    ErrorHandler.mostrarError('Error inesperado al cargar historial');
+  }
+}
+
+/**
+ * Actualizar estadísticas del panel
+ */
+function actualizarEstadisticas() {
+  const totalPedidos = pedidosFiltrados.length;
+  const totalRecaudado = pedidosFiltrados.reduce((sum, p) => sum + (p.total || 0), 0);
+  
+  // Contar clientes únicos por teléfono
+  const telefonosUnicos = new Set(pedidosFiltrados.map(p => p.telefono).filter(t => t));
+  const clientesUnicos = telefonosUnicos.size;
+  
+  const ticketPromedio = totalPedidos > 0 ? Math.round(totalRecaudado / totalPedidos) : 0;
+  
+  document.getElementById('statTotalPedidos').textContent = totalPedidos.toLocaleString();
+  document.getElementById('statTotalRecaudado').textContent = '$' + totalRecaudado.toLocaleString();
+  document.getElementById('statClientesUnicos').textContent = clientesUnicos.toLocaleString();
+  document.getElementById('statTicketPromedio').textContent = '$' + ticketPromedio.toLocaleString();
+}
+
+/**
+ * Analizar y mostrar top 3 productos más vendidos
+ */
+function mostrarTopProductos() {
+  const conteoProductos = {};
+  
+  // Contar productos
+  pedidosFiltrados.forEach(pedido => {
+    if (pedido.items && Array.isArray(pedido.items)) {
+      pedido.items.forEach(item => {
+        const nombreProducto = item.nombre.toLowerCase().trim();
+        if (!conteoProductos[nombreProducto]) {
+          conteoProductos[nombreProducto] = {
+            nombre: item.nombre,
+            cantidad: 0,
+            ventas: 0
+          };
+        }
+        conteoProductos[nombreProducto].cantidad += item.cantidad || 1;
+        conteoProductos[nombreProducto].ventas += (item.cantidad || 1) * (item.precio || 0);
+      });
+    }
+  });
+  
+  // Ordenar por cantidad vendida
+  const productosOrdenados = Object.values(conteoProductos)
+    .sort((a, b) => b.cantidad - a.cantidad)
+    .slice(0, 3);
+  
+  // Renderizar top 3
+  const contenedor = document.getElementById('listaTopProductos');
+  
+  if (productosOrdenados.length === 0) {
+    contenedor.innerHTML = '<div style="color:#6b7280;text-align:center;padding:20px;">No hay productos en el período seleccionado</div>';
+    return;
+  }
+  
+  const medallas = ['🥇', '🥈', '🥉'];
+  const colores = ['#f59e0b', '#9ca3af', '#cd7f32'];
+  
+  contenedor.innerHTML = productosOrdenados.map((producto, index) => `
+    <div style="background:white;padding:16px;border-radius:12px;border:3px solid ${colores[index]};box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <span style="font-size:2rem;">${medallas[index]}</span>
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:1.05rem;color:#1f2937;">${producto.nombre}</div>
+          <div style="font-size:0.85rem;color:#6b7280;">Posición #${index + 1}</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:2px solid #e5e7eb;">
+        <div>
+          <div style="font-size:0.8rem;color:#6b7280;">Unidades</div>
+          <div style="font-size:1.3rem;font-weight:700;color:#4b6cb7;">${producto.cantidad}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:0.8rem;color:#6b7280;">Ventas</div>
+          <div style="font-size:1.3rem;font-weight:700;color:#10b981;">$${producto.ventas.toLocaleString()}</div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+/**
+ * Renderizar historial en modo cronológico
+ */
+function renderizarHistorialCronologico() {
+  const contenedor = document.getElementById('modalHistorialCompletoBody');
+  
+  if (pedidosFiltrados.length === 0) {
+    contenedor.innerHTML = '<div style="text-align:center;padding:40px;color:#6b7280;">No se encontraron pedidos</div>';
+    return;
+  }
+  
+  const html = `
+    <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+      <thead style="background:#f3f4f6;position:sticky;top:0;z-index:10;">
+        <tr>
+          <th style="padding:12px;text-align:left;border-bottom:2px solid #d1d5db;font-weight:700;">📅 Fecha</th>
+          <th style="padding:12px;text-align:left;border-bottom:2px solid #d1d5db;font-weight:700;">👤 Cliente</th>
+          <th style="padding:12px;text-align:left;border-bottom:2px solid #d1d5db;font-weight:700;">📞 Teléfono</th>
+          <th style="padding:12px;text-align:left;border-bottom:2px solid #d1d5db;font-weight:700;">🛒 Productos</th>
+          <th style="padding:12px;text-align:right;border-bottom:2px solid #d1d5db;font-weight:700;">💰 Total</th>
+          <th style="padding:12px;text-align:center;border-bottom:2px solid #d1d5db;font-weight:700;">💳 Pago</th>
+          <th style="padding:12px;text-align:center;border-bottom:2px solid #d1d5db;font-weight:700;">📦 Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${pedidosFiltrados.map(pedido => {
+          const fecha = new Date(pedido.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          const productos = pedido.items ? pedido.items.map(i => `${i.nombre} (${i.cantidad}x)`).join(', ') : 'Sin productos';
+          const metodoPago = obtenerEmojiMetodoPago(pedido.metodo_pago);
+          const estado = pedido.estado === 'ANULADO' ? '🚫 Anulado' : (pedido.entregado ? '✅ Entregado' : '⏳ Pendiente');
+          const colorEstado = pedido.estado === 'ANULADO' ? '#ef4444' : (pedido.entregado ? '#10b981' : '#f59e0b');
+          
+          return `
+            <tr style="border-bottom:1px solid #e5e7eb;">
+              <td style="padding:12px;">${fecha}</td>
+              <td style="padding:12px;font-weight:600;">${pedido.nombre || 'Sin nombre'}</td>
+              <td style="padding:12px;">${pedido.telefono || '-'}</td>
+              <td style="padding:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${productos}">${productos}</td>
+              <td style="padding:12px;text-align:right;font-weight:700;color:#10b981;">$${(pedido.total || 0).toLocaleString()}</td>
+              <td style="padding:12px;text-align:center;">${metodoPago}</td>
+              <td style="padding:12px;text-align:center;color:${colorEstado};font-weight:600;">${estado}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+  
+  contenedor.innerHTML = html;
+}
+
+/**
+ * Renderizar ranking VIP (clientes agrupados por teléfono)
+ */
+function renderizarRankingVIP() {
+  const contenedor = document.getElementById('modalHistorialCompletoBody');
+  
+  // Agrupar por teléfono
+  const clientesAgrupados = {};
+  
+  pedidosFiltrados.forEach(pedido => {
+    const telefono = pedido.telefono || 'sin-telefono';
+    
+    if (!clientesAgrupados[telefono]) {
+      clientesAgrupados[telefono] = {
+        nombre: pedido.nombre || 'Sin nombre',
+        telefono: pedido.telefono || '-',
+        totalCompras: 0,
+        cantidadPedidos: 0,
+        ultimoPedido: pedido.created_at
+      };
+    }
+    
+    clientesAgrupados[telefono].totalCompras += pedido.total || 0;
+    clientesAgrupados[telefono].cantidadPedidos++;
+    
+    // Actualizar último pedido si es más reciente
+    if (new Date(pedido.created_at) > new Date(clientesAgrupados[telefono].ultimoPedido)) {
+      clientesAgrupados[telefono].ultimoPedido = pedido.created_at;
+      clientesAgrupados[telefono].nombre = pedido.nombre || clientesAgrupados[telefono].nombre;
+    }
+  });
+  
+  // Convertir a array y ordenar por total de compras
+  const clientesOrdenados = Object.values(clientesAgrupados)
+    .sort((a, b) => b.totalCompras - a.totalCompras);
+  
+  if (clientesOrdenados.length === 0) {
+    contenedor.innerHTML = '<div style="text-align:center;padding:40px;color:#6b7280;">No se encontraron clientes</div>';
+    return;
+  }
+  
+  const html = `
+    <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+      <thead style="background:#f3f4f6;position:sticky;top:0;z-index:10;">
+        <tr>
+          <th style="padding:12px;text-align:center;border-bottom:2px solid #d1d5db;font-weight:700;">🏅 Rank</th>
+          <th style="padding:12px;text-align:left;border-bottom:2px solid #d1d5db;font-weight:700;">👤 Cliente</th>
+          <th style="padding:12px;text-align:left;border-bottom:2px solid #d1d5db;font-weight:700;">📞 Teléfono</th>
+          <th style="padding:12px;text-align:center;border-bottom:2px solid #d1d5db;font-weight:700;">📦 Pedidos</th>
+          <th style="padding:12px;text-align:right;border-bottom:2px solid #d1d5db;font-weight:700;">💰 Total Compras</th>
+          <th style="padding:12px;text-align:right;border-bottom:2px solid #d1d5db;font-weight:700;">📊 Ticket Prom.</th>
+          <th style="padding:12px;text-align:center;border-bottom:2px solid #d1d5db;font-weight:700;">📅 Último Pedido</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${clientesOrdenados.map((cliente, index) => {
+          const medalla = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : (index + 1);
+          const ticketPromedio = Math.round(cliente.totalCompras / cliente.cantidadPedidos);
+          const ultimaFecha = new Date(cliente.ultimoPedido).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          const bgColor = index < 3 ? 'background:#fef3c7;' : '';
+          
+          return `
+            <tr style="border-bottom:1px solid #e5e7eb;${bgColor}">
+              <td style="padding:12px;text-align:center;font-size:1.2rem;font-weight:700;">${medalla}</td>
+              <td style="padding:12px;font-weight:600;">${cliente.nombre}</td>
+              <td style="padding:12px;">${cliente.telefono}</td>
+              <td style="padding:12px;text-align:center;font-weight:600;color:#4b6cb7;">${cliente.cantidadPedidos}</td>
+              <td style="padding:12px;text-align:right;font-weight:700;font-size:1.1rem;color:#10b981;">$${cliente.totalCompras.toLocaleString()}</td>
+              <td style="padding:12px;text-align:right;color:#6b7280;">$${ticketPromedio.toLocaleString()}</td>
+              <td style="padding:12px;text-align:center;font-size:0.85rem;color:#6b7280;">${ultimaFecha}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+  
+  contenedor.innerHTML = html;
+}
+
+/**
+ * Obtener emoji del método de pago
+ */
+function obtenerEmojiMetodoPago(metodo) {
+  const metodos = {
+    'E': '💵 Efectivo',
+    'DC': '💳 Tarjeta',
+    'TP': '⏳ Transf. Pend.',
+    'TG': '✅ Transf. Pagada',
+    'P': '💰 Pagado'
+  };
+  return metodos[metodo] || '❓ ' + metodo;
+}
+
+/**
+ * Filtrar historial por búsqueda
+ */
+function filtrarHistorial() {
+  const busqueda = document.getElementById('buscarHistorial').value.toLowerCase().trim();
+  
+  if (!busqueda) {
+    pedidosFiltrados = [...todosLosPedidos];
+  } else {
+    pedidosFiltrados = todosLosPedidos.filter(pedido => {
+      // Buscar en nombre
+      const coincideNombre = (pedido.nombre || '').toLowerCase().includes(busqueda);
+      
+      // Buscar en teléfono
+      const coincideTelefono = (pedido.telefono || '').includes(busqueda);
+      
+      // Buscar en productos
+      let coincideProducto = false;
+      if (pedido.items && Array.isArray(pedido.items)) {
+        coincideProducto = pedido.items.some(item => 
+          (item.nombre || '').toLowerCase().includes(busqueda)
+        );
+      }
+      
+      return coincideNombre || coincideTelefono || coincideProducto;
+    });
+  }
+  
+  // Actualizar estadísticas con datos filtrados
+  actualizarEstadisticas();
+  
+  // Renderizar según modo actual
+  if (modoVIP) {
+    renderizarRankingVIP();
+  } else {
+    renderizarHistorialCronologico();
+  }
+}
+
+/**
+ * Toggle entre modo cronológico y VIP
+ */
+function toggleModoVIP() {
+  modoVIP = !modoVIP;
+  
+  const btn = document.getElementById('btnToggleVIP');
+  if (modoVIP) {
+    btn.textContent = '📅 Vista Cronológica';
+    btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+    renderizarRankingVIP();
+  } else {
+    btn.textContent = '💎 Ranking VIP';
+    btn.style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+    renderizarHistorialCronologico();
+  }
+}
+
+/**
+ * Limpiar todos los filtros
+ */
+function limpiarFiltrosHistorial() {
+  // Resetear fechas (últimos 30 días)
+  const hoy = new Date();
+  const hace30Dias = new Date();
+  hace30Dias.setDate(hoy.getDate() - 30);
+  
+  document.getElementById('fechaHasta').value = hoy.toISOString().split('T')[0];
+  document.getElementById('fechaDesde').value = hace30Dias.toISOString().split('T')[0];
+  
+  // Limpiar búsqueda
+  document.getElementById('buscarHistorial').value = '';
+  
+  // Recargar datos
+  cargarHistorialCompleto();
+}
+
+// Event Listeners para Historial Completo
+document.addEventListener('DOMContentLoaded', () => {
+  // Botón abrir historial
+  const btnHistorial = document.getElementById('btnHistorialCompleto');
+  if (btnHistorial) {
+    btnHistorial.addEventListener('click', abrirHistorialCompleto);
+  }
+  
+  // Botón cerrar historial
+  const btnCerrar = document.getElementById('btnCerrarHistorialCompleto');
+  if (btnCerrar) {
+    btnCerrar.addEventListener('click', cerrarHistorialCompleto);
+  }
+  
+  // Toggle VIP
+  const btnToggle = document.getElementById('btnToggleVIP');
+  if (btnToggle) {
+    btnToggle.addEventListener('click', toggleModoVIP);
+  }
+  
+  // Búsqueda en tiempo real
+  const inputBuscar = document.getElementById('buscarHistorial');
+  if (inputBuscar) {
+    inputBuscar.addEventListener('input', filtrarHistorial);
+  }
+  
+  // Botón filtrar por fecha
+  const btnFiltrar = document.getElementById('btnAplicarFiltroFecha');
+  if (btnFiltrar) {
+    btnFiltrar.addEventListener('click', cargarHistorialCompleto);
+  }
+  
+  // Botón limpiar filtros
+  const btnLimpiar = document.getElementById('btnLimpiarFiltros');
+  if (btnLimpiar) {
+    btnLimpiar.addEventListener('click', limpiarFiltrosHistorial);
+  }
+  
+  // Cerrar modal al hacer clic fuera
+  const modal = document.getElementById('modalHistorialCompleto');
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        cerrarHistorialCompleto();
+      }
+    });
+  }
+});
