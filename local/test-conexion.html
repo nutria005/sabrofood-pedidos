@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test de Conexión Supabase</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 40px;
+      background: #1a1a2e;
+      color: #fff;
+    }
+    .test {
+      background: #16213e;
+      padding: 20px;
+      margin: 10px 0;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+    .test.success { border-left-color: #10b981; }
+    .test.error { border-left-color: #ef4444; }
+    .test.pending { border-left-color: #f59e0b; }
+    h1 { color: #667eea; }
+    code {
+      background: #0f3460;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-top: 20px;
+    }
+    button:hover {
+      background: #5568d3;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 Diagnóstico de Conexión Supabase</h1>
+  
+  <div id="test1" class="test pending">
+    <h3>1️⃣ Librería Supabase cargada</h3>
+    <p id="result1">Verificando...</p>
+  </div>
+  
+  <div id="test2" class="test pending">
+    <h3>2️⃣ Archivo de configuración cargado</h3>
+    <p id="result2">Verificando...</p>
+  </div>
+  
+  <div id="test3" class="test pending">
+    <h3>3️⃣ Cliente Supabase inicializado</h3>
+    <p id="result3">Verificando...</p>
+  </div>
+  
+  <div id="test4" class="test pending">
+    <h3>4️⃣ Conexión a base de datos</h3>
+    <p id="result4">Esperando...</p>
+  </div>
+  
+  <div id="test5" class="test pending">
+    <h3>5️⃣ Usuario autenticado</h3>
+    <p id="result5">Esperando...</p>
+  </div>
+  
+  <button onclick="testConexion()">🔄 Ejecutar Test de Conexión</button>
+  
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../shared/supabase-config.js"></script>
+  
+  <script>
+    // Test 1: Librería Supabase
+    if (typeof window.supabase !== 'undefined') {
+      document.getElementById('result1').textContent = '✅ Supabase JS está cargado correctamente';
+      document.getElementById('test1').classList.remove('pending');
+      document.getElementById('test1').classList.add('success');
+    } else {
+      document.getElementById('result1').textContent = '❌ Supabase JS NO está cargado';
+      document.getElementById('test1').classList.remove('pending');
+      document.getElementById('test1').classList.add('error');
+    }
+    
+    // Test 2: Configuración
+    setTimeout(() => {
+      if (typeof SUPABASE_CONFIG !== 'undefined') {
+        document.getElementById('result2').innerHTML = `
+          ✅ Configuración cargada<br>
+          <code>URL: ${SUPABASE_CONFIG.url}</code><br>
+          <code>Key: ${SUPABASE_CONFIG.anonKey.substring(0, 30)}...</code>
+        `;
+        document.getElementById('test2').classList.remove('pending');
+        document.getElementById('test2').classList.add('success');
+      } else {
+        document.getElementById('result2').textContent = '❌ SUPABASE_CONFIG no está definido';
+        document.getElementById('test2').classList.remove('pending');
+        document.getElementById('test2').classList.add('error');
+      }
+    }, 500);
+    
+    // Test 3: Cliente inicializado
+    let cliente = null;
+    setTimeout(() => {
+      if (typeof inicializarSupabase === 'function') {
+        cliente = inicializarSupabase();
+        if (cliente) {
+          document.getElementById('result3').textContent = '✅ Cliente Supabase inicializado correctamente';
+          document.getElementById('test3').classList.remove('pending');
+          document.getElementById('test3').classList.add('success');
+        } else {
+          document.getElementById('result3').textContent = '❌ inicializarSupabase() retornó null';
+          document.getElementById('test3').classList.remove('pending');
+          document.getElementById('test3').classList.add('error');
+        }
+      } else {
+        document.getElementById('result3').textContent = '❌ Función inicializarSupabase() no encontrada';
+        document.getElementById('test3').classList.remove('pending');
+        document.getElementById('test3').classList.add('error');
+      }
+    }, 1000);
+    
+    // Test 4 y 5: Test de conexión (manual)
+    async function testConexion() {
+      if (!cliente) {
+        alert('❌ El cliente no está inicializado. Revisa los tests anteriores.');
+        return;
+      }
+      
+      // Test 4: Consulta a BD
+      document.getElementById('result4').textContent = '⏳ Consultando tabla pedidos...';
+      try {
+        const { data, error } = await cliente.from('pedidos').select('id').limit(1);
+        
+        if (error) {
+          document.getElementById('result4').innerHTML = `
+            ❌ Error al consultar BD<br>
+            <code>${error.message}</code>
+          `;
+          document.getElementById('test4').classList.remove('pending');
+          document.getElementById('test4').classList.add('error');
+        } else {
+          document.getElementById('result4').innerHTML = `
+            ✅ Conexión exitosa a la base de datos<br>
+            <code>Registros encontrados: ${data ? data.length : 0}</code>
+          `;
+          document.getElementById('test4').classList.remove('pending');
+          document.getElementById('test4').classList.add('success');
+        }
+      } catch (e) {
+        document.getElementById('result4').innerHTML = `
+          ❌ Excepción al consultar<br>
+          <code>${e.message}</code>
+        `;
+        document.getElementById('test4').classList.remove('pending');
+        document.getElementById('test4').classList.add('error');
+      }
+      
+      // Test 5: Usuario autenticado
+      document.getElementById('result5').textContent = '⏳ Verificando autenticación...';
+      try {
+        const { data: { user }, error } = await cliente.auth.getUser();
+        
+        if (error) {
+          document.getElementById('result5').innerHTML = `
+            ❌ Error al verificar usuario<br>
+            <code>${error.message}</code>
+          `;
+          document.getElementById('test5').classList.remove('pending');
+          document.getElementById('test5').classList.add('error');
+        } else if (user) {
+          document.getElementById('result5').innerHTML = `
+            ✅ Usuario autenticado<br>
+            <code>Email: ${user.email}</code><br>
+            <code>ID: ${user.id}</code>
+          `;
+          document.getElementById('test5').classList.remove('pending');
+          document.getElementById('test5').classList.add('success');
+        } else {
+          document.getElementById('result5').textContent = '⚠️ No hay usuario autenticado';
+          document.getElementById('test5').classList.remove('pending');
+          document.getElementById('test5').classList.add('error');
+        }
+      } catch (e) {
+        document.getElementById('result5').innerHTML = `
+          ❌ Excepción al verificar usuario<br>
+          <code>${e.message}</code>
+        `;
+        document.getElementById('test5').classList.remove('pending');
+        document.getElementById('test5').classList.add('error');
+      }
+    }
+  </script>
+</body>
+</html>
