@@ -3485,12 +3485,38 @@ function anadirProducto() {
       return;
     }
     
-    productoData = {
-      producto_id: null, // No tiene ID (es manual, no descuenta stock)
-      nombre: validation.valor.nombre,
-      cantidad: validation.valor.cantidad,
-      precio: validation.valor.precio
-    };
+    // 🔍 BUSCAR AUTOMÁTICAMENTE en el catálogo si existe producto granel con ese nombre
+    const nombreIngresado = validation.valor.nombre.trim();
+    const productoGranelEncontrado = catalogoProductos.find(p => {
+      // Buscar coincidencia exacta ignorando mayúsculas y el sufijo "(granel)"
+      const nombreCatalogo = p.nombre.toLowerCase().replace(' (granel)', '').trim();
+      const nombreBuscado = nombreIngresado.toLowerCase().trim();
+      return nombreCatalogo === nombreBuscado && p.nombre.toLowerCase().includes('(granel)');
+    });
+    
+    if (productoGranelEncontrado) {
+      // ✅ ENCONTRADO: Usar producto del catálogo con su ID para descuento de stock
+      console.log(`🔗 Producto granel encontrado: "${productoGranelEncontrado.nombre}" (ID: ${productoGranelEncontrado.id})`);
+      
+      productoData = {
+        producto_id: productoGranelEncontrado.id, // 🎯 ASOCIAR ID para descuento de stock
+        nombre: productoGranelEncontrado.nombre, // Usar nombre completo con "(granel)"
+        cantidad: validation.valor.cantidad,
+        precio: validation.valor.precio // Usar precio ingresado manualmente (puede variar)
+      };
+      
+      ErrorHandler.mostrarExito(`📦 Vinculado con catálogo: ${productoGranelEncontrado.nombre}`);
+    } else {
+      // ❌ NO ENCONTRADO: Crear producto manual sin ID (no descuenta stock)
+      console.log(`⚠️ Producto granel NO encontrado en catálogo: "${nombreIngresado}"`);
+      
+      productoData = {
+        producto_id: null, // Sin ID (no descuenta stock)
+        nombre: validation.valor.nombre,
+        cantidad: validation.valor.cantidad,
+        precio: validation.valor.precio
+      };
+    }
     
     productoEl.value = '';
     precioEl.value = '';
@@ -5112,6 +5138,10 @@ async function mostrarModalCarga() {
         const checkedClass = estaMarcado ? ' checked' : '';
         
         // Mostrar producto grande y cliente pequeño debajo
+        // Para productos granel, mostrar cantidad como monto ($3000)
+        const esGranel = item.nombre.toLowerCase().includes('(granel)');
+        const cantidadMostrar = esGranel ? `$${item.cantidad.toLocaleString('es-CL')}` : item.cantidad;
+        
         items += `
           <div class="item-carga${checkedClass}" 
                data-checkbox-id="${checkboxId}"
@@ -5124,7 +5154,7 @@ async function mostrarModalCarga() {
               <div class="item-producto-nombre">${item.nombre}</div>
               <div class="item-cliente-nombre">Para: ${item.cliente}</div>
             </label>
-            <span class="item-cantidad">${item.cantidad}</span>
+            <span class="item-cantidad">${cantidadMostrar}</span>
           </div>`;
         idx++;
       }
