@@ -4,7 +4,6 @@
 // === VARIABLES GLOBALES ===
 let productosDisponibles = []; // Catálogo de productos desde Supabase
 let ultimaActualizacionCatalogo = null; // Timestamp de última carga del catálogo
-let productoSeleccionado = null; // Producto actualmente seleccionado del catálogo
 
 // === UTILIDADES ===
 /**
@@ -316,12 +315,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   OfflineManager.actualizarEstadoConexion();
   OfflineManager.actualizarContadorCola();
   
-  // Cargar catálogo de productos
+  // Cargar catálogos de productos (sacos y granel)
   await cargarCatalogoProductos();
+  await cargarCatalogoGranel();
   
-  // Actualizar indicador cada minuto
+  // Actualizar indicadores cada minuto
   setInterval(() => {
     actualizarIndicadorActualizacion();
+    actualizarIndicadorActualizacionGranel();
   }, 60000); // 60 segundos
   
   // Configurar event listeners para tipo de producto
@@ -1409,7 +1410,10 @@ async function guardarPedido() {
     }
 
     // Calcular total del pedido
-    const totalPedido = lineasPedido.reduce((acc, p) => acc + (p.cantidad * p.precio), 0);
+    const totalPedido = lineasPedido.reduce((acc, p) => {
+      const esGranel = p.nombre && p.nombre.toLowerCase().includes('(granel)');
+      return acc + (esGranel ? p.cantidad : p.cantidad * p.precio);
+    }, 0);
     
     // Verificar que el total no sea $0
     if (totalPedido === 0) {
@@ -1439,7 +1443,10 @@ async function guardarPedido() {
       fecha: validaciones.fecha.valor,
       metodo_pago: metodoEl.value || 'E',
       notas: validaciones.nota.valor,
-      total: lineasPedido.reduce((acc, p) => acc + (p.cantidad * p.precio), 0),
+      total: lineasPedido.reduce((acc, p) => {
+        const esGranel = p.nombre && p.nombre.toLowerCase().includes('(granel)');
+        return acc + (esGranel ? p.cantidad : p.cantidad * p.precio);
+      }, 0),
       entregado: false,
       prioridad: rutaEl.value || 'C', // Prioridad desde selector de ruta (por defecto C)
       orden_ruta: Math.floor(Date.now() / 1000), // Timestamp en segundos (más pequeño)
@@ -2598,7 +2605,10 @@ async function actualizarPedido(docId) {
     }
     
     // Calcular total
-    const total = lineasPedido.reduce((sum, item) => sum + (item.cantidad * item.precio), 0);
+    const total = lineasPedido.reduce((sum, item) => {
+      const esGranel = item.nombre && item.nombre.toLowerCase().includes('(granel)');
+      return sum + (esGranel ? item.cantidad : item.cantidad * item.precio);
+    }, 0);
     
     // Preparar datos actualizados
     const pedidoActualizado = {
@@ -2827,18 +2837,36 @@ function renderLineasPedido() {
   cont.innerHTML = '';
   let total = 0;
   lineasPedido.forEach((p, idx) => {
-    const subtotal = p.cantidad * p.precio;
+    // Detectar si es producto granel
+    const esGranel = p.nombre && p.nombre.toLowerCase().includes('(granel)');
+    
+    // Para granel: cantidad YA ES el total (monto en pesos)
+    // Para catálogo: cantidad * precio
+    const subtotal = esGranel ? p.cantidad : (p.cantidad * p.precio);
     total += subtotal;
+    
     const div = document.createElement('div');
     div.className = 'flex-between flex-gap-8';
     div.style.padding = '4px 0';
-    div.innerHTML = `
-      <span class="item-name">${p.nombre}</span>
-      <span class="item-quantity">x${p.cantidad}</span>
-      <span class="item-price">$${p.precio.toLocaleString('es-CL')}</span>
-      <span class="item-subtotal">Subtotal: $${subtotal.toLocaleString('es-CL')}</span>
-      <button type="button" class="remove-item-btn" data-idx="${idx}">✕</button>
-    `;
+    
+    // Para granel: solo mostrar el monto total
+    // Para catálogo: mostrar cantidad, precio unitario y subtotal
+    if (esGranel) {
+      div.innerHTML = `
+        <span class="item-name">${p.nombre}</span>
+        <span class="item-quantity" style="color:#16a34a;font-weight:600;">$${p.cantidad.toLocaleString('es-CL')}</span>
+        <button type="button" class="remove-item-btn" data-idx="${idx}">✕</button>
+      `;
+    } else {
+      div.innerHTML = `
+        <span class="item-name">${p.nombre}</span>
+        <span class="item-quantity">x${p.cantidad}</span>
+        <span class="item-price">$${p.precio.toLocaleString('es-CL')}</span>
+        <span class="item-subtotal">Subtotal: $${subtotal.toLocaleString('es-CL')}</span>
+        <button type="button" class="remove-item-btn" data-idx="${idx}">✕</button>
+      `;
+    }
+    
     div.querySelector('button').onclick = () => {
       lineasPedido.splice(idx, 1);
       renderLineasPedido();
@@ -2852,6 +2880,12 @@ function renderLineasPedido() {
 // ==================================================
 // SISTEMA DE INTEGRACIÓN CON CATÁLOGO DE PRODUCTOS
 // ==================================================
+
+// Variables para catálogos separados
+let catalogoProductos = []; // Productos por sacos (NO granel)
+let catalogoGranel = []; // Productos a granel
+let productoSeleccionado = null; // Producto de catálogo seleccionado
+let productoGranelSeleccionado = null; // Producto granel seleccionado
 
 /**
  * Cargar catálogo de productos desde Supabase
@@ -2897,6 +2931,56 @@ async function cargarCatalogoProductos(mostrarMensaje = false) {
  */
 async function recargarCatalogoManual() {
   await cargarCatalogoProductos(true);
+}
+
+/**
+ * Cargar catálogo de productos GRANEL desde Supabase
+ * SOLO productos de tipo "granel"
+ */
+async function cargarCatalogoGranel(mostrarMensaje = false) {
+  try {
+    if (mostrarMensaje) {
+      console.log('🔄 Recargando catálogo de productos a granel...');
+    }
+    
+    const { data, error } = await supabase_client
+      .from('productos')
+      .select('id, nombre, categoria, marca, stock, stock_minimo_sacos, precio, tipo')
+      .eq('tipo', 'granel') // SOLO productos a granel
+      .order('nombre', { ascending: true });
+    
+    if (error) throw error;
+    
+    catalogoGranel = data || [];
+    
+    console.log(`⚖️ ${catalogoGranel.length} productos granel cargados`);
+    actualizarIndicadorActualizacionGranel();
+    
+    if (mostrarMensaje) {
+      mostrarNotificacionTemporal('✅ Catálogo granel actualizado');
+    }
+    
+  } catch (error) {
+    console.error('Error cargando catálogo granel:', error);
+    ErrorHandler.mostrarError('No se pudo cargar el catálogo de productos granel');
+  }
+}
+
+/**
+ * Recargar catálogo granel manualmente (botón)
+ */
+async function recargarCatalogoGranel() {
+  await cargarCatalogoGranel(true);
+}
+
+/**
+ * Actualizar indicador visual de última actualización granel
+ */
+function actualizarIndicadorActualizacionGranel() {
+  const indicador = document.getElementById('indicadorActualizacionGranel');
+  if (!indicador) return;
+  
+  indicador.textContent = 'Actualizado ahora';
 }
 
 /**
@@ -3135,48 +3219,212 @@ function limpiarSeleccionProducto() {
 }
 
 /**
+ * Filtrar productos GRANEL por búsqueda
+ */
+function filtrarProductosGranel(query) {
+  const resultsContainer = document.getElementById('productSearchResultsGranel');
+  if (!resultsContainer) return;
+  
+  if (!query || query.length < 2) {
+    resultsContainer.style.display = 'none';
+    return;
+  }
+  
+  const queryLower = query.toLowerCase();
+  const resultados = catalogoGranel.filter(p => {
+    const nombre = (p.nombre || '').toLowerCase();
+    const categoria = (p.categoria || '').toLowerCase();
+    const marca = (p.marca || '').toLowerCase();
+    
+    return nombre.includes(queryLower) || 
+           categoria.includes(queryLower) || 
+           marca.includes(queryLower);
+  });
+  
+  if (resultados.length === 0) {
+    resultsContainer.innerHTML = '<div class="no-results">No se encontraron productos</div>';
+    resultsContainer.style.display = 'block';
+    return;
+  }
+  
+  // Renderizar tarjetas de resultados
+  resultsContainer.innerHTML = resultados.slice(0, 10).map(p => {
+    const stock = Math.floor(p.stock || 0);
+    const stockMinimo = p.stock_minimo_sacos || 0;
+    
+    let badgeClass = 'badge-success';
+    let stockText = `Stock: ${stock}`;
+    
+    if (stock === 0) {
+      badgeClass = 'badge-danger';
+      stockText = 'Sin stock';
+    } else if (stock <= stockMinimo) {
+      badgeClass = 'badge-warning';
+      stockText = `Stock: ${stock} ⚠️`;
+    }
+    
+    return `
+      <div class="product-result-card" data-producto-id="${p.id}" onclick="seleccionarProductoGranel(${p.id})">
+        <div class="product-result-info">
+          <div class="product-result-name">${p.nombre}</div>
+          <div class="product-result-meta">
+            ${p.categoria ? `<span class="text-muted">${p.categoria}</span>` : ''}
+            ${p.marca ? `<span class="text-muted">• ${p.marca}</span>` : ''}
+          </div>
+        </div>
+        <div class="product-result-actions">
+          <span class="badge ${badgeClass}">${stockText}</span>
+          <div class="product-result-price">$${formatoMoneda(p.precio || 0)}/kg</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  resultsContainer.style.display = 'block';
+}
+
+/**
+ * Seleccionar producto GRANEL
+ */
+function seleccionarProductoGranel(productoId) {
+  const producto = catalogoGranel.find(p => p.id === productoId);
+  if (!producto) return;
+  
+  productoGranelSeleccionado = producto;
+  
+  // Ocultar resultados
+  const resultsContainer = document.getElementById('productSearchResultsGranel');
+  if (resultsContainer) {
+    resultsContainer.style.display = 'none';
+  }
+  
+  // Limpiar búsqueda
+  const searchInput = document.getElementById('searchProductInputGranel');
+  if (searchInput) {
+    searchInput.value = '';
+  }
+  
+  // Ocultar botón limpiar búsqueda
+  const btnClear = document.getElementById('btnClearSearchProductGranel');
+  if (btnClear) {
+    btnClear.style.display = 'none';
+  }
+  
+  // Mostrar tarjeta de producto seleccionado
+  mostrarProductoGranelSeleccionado(producto);
+  
+  // Enfocar campo de monto
+  const inputCantidad = document.getElementById('itemCantidad');
+  if (inputCantidad) {
+    inputCantidad.focus();
+    inputCantidad.select();
+  }
+}
+
+/**
+ * Mostrar tarjeta del producto granel seleccionado
+ */
+function mostrarProductoGranelSeleccionado(producto) {
+  const card = document.getElementById('selectedProductCardGranel');
+  if (!card) return;
+  
+  const stock = Math.floor(producto.stock || 0);
+  
+  let stockText = '';
+  if (stock === 0) {
+    stockText = '⚠️ Sin stock';
+  } else {
+    stockText = `✅ Stock: ${stock} kg`;
+  }
+  
+  card.querySelector('.selected-product-name').textContent = producto.nombre;
+  card.querySelector('.selected-product-price').textContent = `$${formatoMoneda(producto.precio || 0)}/kg`;
+  card.querySelector('.selected-product-stock').textContent = stockText;
+  
+  card.style.display = 'flex';
+}
+
+/**
+ * Limpiar selección de producto granel
+ */
+function limpiarSeleccionProductoGranel() {
+  productoGranelSeleccionado = null;
+  
+  const card = document.getElementById('selectedProductCardGranel');
+  if (card) {
+    card.style.display = 'none';
+  }
+  
+  // Enfocar input de búsqueda
+  const searchInput = document.getElementById('searchProductInputGranel');
+  if (searchInput) {
+    searchInput.focus();
+  }
+}
+
+/**
  * Configurar event listeners para cambiar entre tipo de producto y buscador
  */
 function configurarSelectoresTipoProducto() {
   const radioCatalogo = document.getElementById('radioProductoCatalogo');
-  const radioManual = document.getElementById('radioProductoManual');
+  const radioGranel = document.getElementById('radioProductoGranel');
   const containerCatalogo = document.getElementById('containerProductoCatalogo');
-  const containerManual = document.getElementById('containerProductoManual');
+  const containerGranel = document.getElementById('containerProductoGranel');
+  const labelCantidad = document.getElementById('labelCantidad');
+  const inputCantidad = document.getElementById('itemCantidad');
+  
+  // BUSCADOR DE CATÁLOGO (SACOS)
   const searchInput = document.getElementById('searchProductInput');
   const btnClear = document.getElementById('btnClearSearchProduct');
   const btnRemoveSelection = document.getElementById('btnRemoveSelection');
   
-  if (!radioCatalogo || !radioManual) return;
+  // BUSCADOR DE GRANEL
+  const searchInputGranel = document.getElementById('searchProductInputGranel');
+  const btnClearGranel = document.getElementById('btnClearSearchProductGranel');
+  const btnRemoveSelectionGranel = document.getElementById('btnRemoveSelectionGranel');
   
-  // Cambiar entre catálogo y manual
+  if (!radioCatalogo || !radioGranel) return;
+  
+  // Cambiar entre catálogo y granel
   function actualizarVista() {
     if (radioCatalogo.checked) {
+      // MODO CATÁLOGO (SACOS)
       containerCatalogo.style.display = 'block';
-      containerManual.style.display = 'none';
+      containerGranel.style.display = 'none';
+      labelCantidad.textContent = 'Cantidad:';
+      inputCantidad.min = 1;
+      inputCantidad.step = 1;
+      inputCantidad.value = 1;
+      inputCantidad.placeholder = 'Cant.';
       if (searchInput) searchInput.focus();
     } else {
+      // MODO GRANEL (MONTO)
       containerCatalogo.style.display = 'none';
-      containerManual.style.display = 'block';
+      containerGranel.style.display = 'block';
+      labelCantidad.textContent = '💰 Monto ($):';
+      inputCantidad.min = 100;
+      inputCantidad.step = 100;
+      inputCantidad.value = 1000;
+      inputCantidad.placeholder = 'Ej: 5000';
+      if (searchInputGranel) searchInputGranel.focus();
       limpiarSeleccionProducto();
     }
   }
   
   radioCatalogo.addEventListener('change', actualizarVista);
-  radioManual.addEventListener('change', actualizarVista);
+  radioGranel.addEventListener('change', actualizarVista);
   
-  // Event listener para búsqueda en tiempo real
+  // ==== EVENT LISTENERS PARA CATÁLOGO (SACOS) ====
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
       const query = e.target.value;
       filtrarProductos(query);
       
-      // Mostrar/ocultar botón limpiar
       if (btnClear) {
         btnClear.style.display = query ? 'block' : 'none';
       }
     });
     
-    // Manejar Enter para seleccionar primer resultado
     searchInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -3191,11 +3439,9 @@ function configurarSelectoresTipoProducto() {
       }
     });
     
-    // Enfocar al abrir
     searchInput.focus();
   }
   
-  // Botón limpiar búsqueda
   if (btnClear) {
     btnClear.addEventListener('click', () => {
       if (searchInput) {
@@ -3210,9 +3456,52 @@ function configurarSelectoresTipoProducto() {
     });
   }
   
-  // Botón remover selección
   if (btnRemoveSelection) {
     btnRemoveSelection.addEventListener('click', limpiarSeleccionProducto);
+  }
+  
+  // ==== EVENT LISTENERS PARA GRANEL ====
+  if (searchInputGranel) {
+    searchInputGranel.addEventListener('input', (e) => {
+      const query = e.target.value;
+      filtrarProductosGranel(query);
+      
+      if (btnClearGranel) {
+        btnClearGranel.style.display = query ? 'block' : 'none';
+      }
+    });
+    
+    searchInputGranel.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const resultsContainer = document.getElementById('productSearchResultsGranel');
+        const firstCard = resultsContainer ? resultsContainer.querySelector('.product-result-card') : null;
+        if (firstCard) {
+          const productoId = firstCard.dataset.productoId;
+          if (productoId) {
+            seleccionarProductoGranel(parseInt(productoId));
+          }
+        }
+      }
+    });
+  }
+  
+  if (btnClearGranel) {
+    btnClearGranel.addEventListener('click', () => {
+      if (searchInputGranel) {
+        searchInputGranel.value = '';
+        searchInputGranel.focus();
+      }
+      btnClearGranel.style.display = 'none';
+      const resultsContainer = document.getElementById('productSearchResultsGranel');
+      if (resultsContainer) {
+        resultsContainer.style.display = 'none';
+      }
+    });
+  }
+  
+  if (btnRemoveSelectionGranel) {
+    btnRemoveSelectionGranel.addEventListener('click', limpiarSeleccionProductoGranel);
   }
   
   // Inicializar vista
@@ -3417,18 +3706,14 @@ function anadirProducto() {
   const tipoProducto = document.querySelector('input[name="tipoProducto"]:checked').value;
   const cantidadEl = document.getElementById('itemCantidad');
   
-  let productoData = {};
-  
   if (tipoProducto === 'catalogo') {
-    // Producto del catálogo - usando producto seleccionado del buscador
+    // ===== MODO CATÁLOGO (SACOS) =====
     if (!productoSeleccionado) {
-      ErrorHandler.mostrarError('Debes buscar y seleccionar un producto del catálogo');
+      ErrorHandler.mostrarError('⚠️ Debes buscar y seleccionar un producto del catálogo');
       return;
     }
     
     const producto = productoSeleccionado;
-    
-    // Validar cantidad
     const cantidad = parseInt(cantidadEl.value);
     
     if (!cantidad || cantidad <= 0) {
@@ -3462,91 +3747,71 @@ function anadirProducto() {
       );
     }
     
-    productoData = {
-      producto_id: producto.id, // ID para descuento de stock
+    const productoData = {
+      producto_id: producto.id,
       nombre: Validator.sanitizeHTML(producto.nombre),
       cantidad: cantidad,
       precio: producto.precio || 0
     };
     
+    // Verificar duplicados
+    const productoExistente = lineasPedido.find(p => p.producto_id === productoData.producto_id);
+    
+    if (productoExistente) {
+      productoExistente.cantidad += cantidad;
+      ErrorHandler.mostrarExito(`Cantidad actualizada para ${productoData.nombre}`);
+    } else {
+      lineasPedido.push(productoData);
+      ErrorHandler.mostrarExito(`${productoData.nombre} agregado al pedido`);
+    }
+    
+    // Limpiar selección y resetear cantidad
+    limpiarSeleccionProducto();
+    cantidadEl.value = 1;
+    
   } else {
-    // Producto manual (granel)
-    const productoEl = document.getElementById('itemProducto');
-    const precioEl = document.getElementById('itemPrecio');
-    
-    const validation = Validator.validarProducto(
-      productoEl.value, 
-      cantidadEl.value, 
-      precioEl.value
-    );
-    
-    if (!validation.valido) {
-      ErrorHandler.mostrarError('Errores en el producto:\n• ' + validation.errores.join('\n• '));
+    // ===== MODO GRANEL (MONTO) =====
+    if (!productoGranelSeleccionado) {
+      ErrorHandler.mostrarError('⚠️ Debes buscar y seleccionar un producto a granel');
       return;
     }
     
-    // 🔍 BUSCAR AUTOMÁTICAMENTE en el catálogo si existe producto granel con ese nombre
-    const nombreIngresado = validation.valor.nombre.trim();
-    const productoGranelEncontrado = catalogoProductos.find(p => {
-      // Buscar coincidencia exacta ignorando mayúsculas y el sufijo "(granel)"
-      const nombreCatalogo = p.nombre.toLowerCase().replace(' (granel)', '').trim();
-      const nombreBuscado = nombreIngresado.toLowerCase().trim();
-      return nombreCatalogo === nombreBuscado && p.nombre.toLowerCase().includes('(granel)');
-    });
+    const producto = productoGranelSeleccionado;
+    const monto = parseInt(cantidadEl.value);
     
-    if (productoGranelEncontrado) {
-      // ✅ ENCONTRADO: Usar producto del catálogo con su ID para descuento de stock
-      console.log(`🔗 Producto granel encontrado: "${productoGranelEncontrado.nombre}" (ID: ${productoGranelEncontrado.id})`);
-      
-      productoData = {
-        producto_id: productoGranelEncontrado.id, // 🎯 ASOCIAR ID para descuento de stock
-        nombre: productoGranelEncontrado.nombre, // Usar nombre completo con "(granel)"
-        cantidad: validation.valor.cantidad,
-        precio: validation.valor.precio // Usar precio ingresado manualmente (puede variar)
-      };
-      
-      ErrorHandler.mostrarExito(`📦 Vinculado con catálogo: ${productoGranelEncontrado.nombre}`);
+    if (!monto || monto < 100) {
+      ErrorHandler.mostrarError('💰 El monto debe ser al menos $100');
+      return;
+    }
+    
+    // Preparar datos del producto granel (monto como cantidad)
+    const productoData = {
+      producto_id: producto.id,
+      nombre: Validator.sanitizeHTML(producto.nombre),
+      cantidad: monto, // MONTO en pesos
+      precio: monto // Precio = monto para cálculo de total
+    };
+    
+    console.log(`⚖️ Agregando producto granel: ${producto.nombre} - Monto: $${monto.toLocaleString('es-CL')}`);
+    
+    // Verificar duplicados (mismo producto granel)
+    const productoExistente = lineasPedido.find(p => p.producto_id === productoData.producto_id);
+    
+    if (productoExistente) {
+      // Sumar al monto existente
+      productoExistente.cantidad += monto;
+      productoExistente.precio += monto;
+      ErrorHandler.mostrarExito(`💰 Monto actualizado para ${productoData.nombre}: $${productoExistente.cantidad.toLocaleString('es-CL')}`);
     } else {
-      // ❌ NO ENCONTRADO: Crear producto manual sin ID (no descuenta stock)
-      console.log(`⚠️ Producto granel NO encontrado en catálogo: "${nombreIngresado}"`);
-      
-      productoData = {
-        producto_id: null, // Sin ID (no descuenta stock)
-        nombre: validation.valor.nombre,
-        cantidad: validation.valor.cantidad,
-        precio: validation.valor.precio
-      };
+      lineasPedido.push(productoData);
+      ErrorHandler.mostrarExito(`✅ ${productoData.nombre} agregado - $${monto.toLocaleString('es-CL')}`);
     }
     
-    productoEl.value = '';
-    precioEl.value = '';
+    // Limpiar selección y resetear monto
+    limpiarSeleccionProductoGranel();
+    cantidadEl.value = 1000;
   }
   
-  // Verificar duplicados
-  const productoExistente = lineasPedido.find(p => {
-    // Si ambos tienen producto_id, comparar por ID
-    if (p.producto_id && productoData.producto_id) {
-      return p.producto_id === productoData.producto_id;
-    }
-    // Si no, comparar por nombre
-    return p.nombre.toLowerCase() === productoData.nombre.toLowerCase();
-  });
-  
-  if (productoExistente) {
-    // Actualizar cantidad del producto existente
-    productoExistente.cantidad += productoData.cantidad;
-    ErrorHandler.mostrarExito(`Cantidad actualizada para ${productoData.nombre}`);
-  } else {
-    // Agregar nuevo producto
-    lineasPedido.push(productoData);
-    ErrorHandler.mostrarExito(`${productoData.nombre} agregado al pedido`);
-  }
-  
-  // Limpiar campos
-  if (tipoProducto === 'catalogo') {
-    limpiarSeleccionProducto();
-  }
-  cantidadEl.value = 1;
   renderLineasPedido();
 }
 
@@ -3632,7 +3897,10 @@ function render(datosParaRenderizar){
     div.dataset.clienteId = d.id;
 
     const resumenTexto = (Array.isArray(d.items) && d.items.length)
-          ? d.items.map(it => `${it.nombre} (${it.cantidad}x)`).join(', ')
+          ? d.items.map(it => {
+              const esGranel = it.nombre && it.nombre.toLowerCase().includes('(granel)');
+              return esGranel ? `${it.nombre} ($${it.cantidad.toLocaleString('es-CL')})` : `${it.nombre} (${it.cantidad}x)`;
+            }).join(', ')
           : 'Sin productos';
     
     // Usar nueva función para mostrar precio/PAGADO
@@ -6047,7 +6315,10 @@ function renderizarHistorialCronologico() {
       <tbody>
         ${pedidosFiltrados.map(pedido => {
           const fecha = new Date(pedido.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
-          const productos = pedido.items ? pedido.items.map(i => `${i.nombre} (${i.cantidad}x)`).join(', ') : 'Sin productos';
+          const productos = pedido.items ? pedido.items.map(i => {
+            const esGranel = i.nombre && i.nombre.toLowerCase().includes('(granel)');
+            return esGranel ? `${i.nombre} ($${i.cantidad.toLocaleString('es-CL')})` : `${i.nombre} (${i.cantidad}x)`;
+          }).join(', ') : 'Sin productos';
           const metodoPago = obtenerEmojiMetodoPago(pedido.metodo_pago);
           const estado = pedido.estado === 'ANULADO' ? '🚫 Anulado' : (pedido.entregado ? '✅ Entregado' : '⏳ Pendiente');
           const colorEstado = pedido.estado === 'ANULADO' ? '#ef4444' : (pedido.entregado ? '#10b981' : '#f59e0b');
