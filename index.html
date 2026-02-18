@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Sistema de gestión de pedidos - Selector de Rol">
+  <meta name="theme-color" content="#4b6cb7">
+  <title>Sistema de Pedidos | Bienvenida</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    .container {
+      max-width: 800px;
+      width: 100%;
+    }
+    
+    /* Login Screen */
+    .login-screen {
+      background: white;
+      border-radius: 24px;
+      padding: 48px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      text-align: center;
+      animation: slideUp 0.4s ease-out;
+    }
+    
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .login-screen h1 {
+      font-size: 32px;
+      font-weight: 800;
+      color: #1f2937;
+      margin-bottom: 12px;
+    }
+    
+    .login-screen p {
+      font-size: 16px;
+      color: #6b7280;
+      margin-bottom: 32px;
+    }
+    
+    .login-form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      max-width: 320px;
+      margin: 0 auto;
+    }
+    
+    .input-group {
+      position: relative;
+    }
+    
+    .input-group input {
+      width: 100%;
+      padding: 16px 20px;
+      font-size: 16px;
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      transition: all 0.3s ease;
+      font-family: 'Inter', sans-serif;
+    }
+    
+    .input-group input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+    }
+    
+    .btn-login {
+      padding: 16px 32px;
+      font-size: 16px;
+      font-weight: 700;
+      color: white;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-top: 8px;
+    }
+    
+    .btn-login:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+    }
+    
+    .btn-login:active {
+      transform: translateY(0);
+    }
+    
+    .error-message {
+      background: #fee;
+      color: #c33;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+    }
+    
+    /* Role Selection Screen */
+    .role-screen {
+      display: none;
+      animation: fadeIn 0.5s ease-out;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    .welcome-header {
+      text-align: center;
+      margin-bottom: 48px;
+      color: white;
+    }
+    
+    .welcome-header h1 {
+      font-size: 42px;
+      font-weight: 800;
+      margin-bottom: 12px;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    }
+    
+    .welcome-header p {
+      font-size: 18px;
+      opacity: 0.95;
+    }
+    
+    .role-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+    
+    .role-card {
+      background: white;
+      border-radius: 20px;
+      padding: 40px 32px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .role-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 6px;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      transform: scaleX(0);
+      transition: transform 0.3s ease;
+    }
+    
+    .role-card:hover::before {
+      transform: scaleX(1);
+    }
+    
+    .role-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    }
+    
+    .role-icon {
+      font-size: 64px;
+      margin-bottom: 20px;
+      display: block;
+    }
+    
+    .role-card h2 {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1f2937;
+      margin-bottom: 12px;
+    }
+    
+    .role-card p {
+      font-size: 15px;
+      color: #6b7280;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    
+    .role-features {
+      text-align: left;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid #e5e7eb;
+    }
+    
+    .role-features li {
+      font-size: 13px;
+      color: #4b5563;
+      margin-bottom: 8px;
+      padding-left: 20px;
+      position: relative;
+    }
+    
+    .role-features li::before {
+      content: '✓';
+      position: absolute;
+      left: 0;
+      color: #10b981;
+      font-weight: 700;
+    }
+    
+    .btn-logout {
+      display: block;
+      margin: 0 auto;
+      padding: 12px 32px;
+      font-size: 14px;
+      font-weight: 600;
+      color: white;
+      background: rgba(255, 255, 255, 0.2);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+    }
+    
+    .btn-logout:hover {
+      background: rgba(255, 255, 255, 0.3);
+      border-color: rgba(255, 255, 255, 0.5);
+    }
+    
+    @media (max-width: 640px) {
+      .login-screen {
+        padding: 32px 24px;
+      }
+      
+      .welcome-header h1 {
+        font-size: 32px;
+      }
+      
+      .role-cards {
+        grid-template-columns: 1fr;
+      }
+      
+      .role-card {
+        padding: 32px 24px;
+      }
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Pantalla de Login -->
+  <div class="container">
+    <!-- MENSAJE DE AUTO-LOGIN -->
+    <div id="autoLoginMessage" style="display: none; text-align: center; padding: 20px; background: #d1fae5; border-radius: 10px; margin-bottom: 20px;">
+      <div style="border: 3px solid #f3f4f6; border-top: 3px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px;"></div>
+      <div style="font-weight: 600; color: #065f46;">
+        🔐 Iniciando sesión automáticamente...
+      </div>
+      <div style="font-size: 12px; color: #047857; margin-top: 5px;">
+        Dispositivo recordado
+      </div>
+    </div>
+    
+    <div class="login-screen" id="loginScreen">
+      <h1>🐶 Sistema de Pedidos</h1>
+      <p>Ingresa tus credenciales para acceder</p>
+      
+      <form class="login-form" id="loginForm">
+        <div class="input-group">
+          <input 
+            type="email" 
+            id="emailInput" 
+            placeholder="Email" 
+            autocomplete="email"
+            required
+          />
+        </div>
+        
+        <div class="input-group">
+          <input 
+            type="password" 
+            id="passwordInput" 
+            placeholder="Contraseña" 
+            autocomplete="current-password"
+            required
+          />
+        </div>
+        
+        <!-- CHECKBOX RECORDAR DISPOSITIVO -->
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 24px; padding: 12px; background: #f9fafb; border-radius: 10px; border: 2px solid #e5e7eb;">
+          <input 
+            type="checkbox" 
+            id="rememberDevice" 
+            style="width: 20px; height: 20px; cursor: pointer; accent-color: #667eea;"
+            checked
+          >
+          <label for="rememberDevice" style="font-size: 14px; color: #374151; cursor: pointer; user-select: none; flex: 1;">
+            🔒 Recordar en este dispositivo
+          </label>
+          <div style="position: relative; display: inline-block;">
+            <div style="width: 18px; height: 18px; background: #667eea; color: white; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; cursor: help;" title="Tu sesión permanecerá activa por 30 días">
+              ℹ️
+            </div>
+          </div>
+        </div>
+
+        <!-- NOTA DE SEGURIDAD -->
+        <div style="margin-top: 20px; padding: 12px; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 8px; font-size: 12px; color: #92400e;">
+          <strong>🔒 Seguridad:</strong> Tu contraseña nunca se guarda. Solo se almacena una sesión encriptada de Supabase.
+        </div>
+        
+        <div class="error-message" id="errorMessage"></div>
+        
+        <button type="submit" class="btn-login">
+          🔓 Ingresar
+        </button>
+      </form>
+    </div>
+
+    <!-- Pantalla de Selección de Rol -->
+    <div class="role-screen" id="roleScreen">
+      <div class="welcome-header">
+        <h1>¡Bienvenido! 🎉</h1>
+        <p>Selecciona tu área de trabajo</p>
+      </div>
+
+      <div class="role-cards">
+        <!-- Tarjeta Repartidor -->
+        <div class="role-card" onclick="seleccionarRol('repartidor')">
+          <span class="role-icon">🚚</span>
+          <h2>Repartidor</h2>
+          <p>Interfaz optimizada para entregas en ruta</p>
+          <ul class="role-features">
+            <li>Ver pedidos del día</li>
+            <li>Marcar entregas realizadas</li>
+            <li>Control de recaudación</li>
+            <li>Modo offline disponible</li>
+          </ul>
+        </div>
+
+        <!-- Tarjeta Local/Admin -->
+        <div class="role-card" onclick="seleccionarRol('local')">
+          <span class="role-icon">🏢</span>
+          <h2>Local / Admin</h2>
+          <p>Panel completo de administración</p>
+          <ul class="role-features">
+            <li>Crear nuevos pedidos</li>
+            <li>Editar información</li>
+            <li>Eliminar registros</li>
+            <li>Estadísticas completas</li>
+            <li>Exportar datos</li>
+          </ul>
+        </div>
+      </div>
+
+      <button class="btn-logout" onclick="cerrarSesionCompleta()">
+        🔒 Cerrar Sesión
+      </button>
+    </div>
+  </div>
+
+  <script src="shared/supabase-config.js"></script>
+  <script src="shared/roles-config.js"></script>
+  <script>
+    // === AUTENTICACIÓN CON SUPABASE ===
+    let supabaseClient = null;
+
+    // Función auxiliar para verificar rol y redirigir
+    function verificarRolYRedirigir(user) {
+      if (ROLES_CONFIG.esAdmin(user.email)) {
+        mostrarSeleccionRol();
+      } else if (ROLES_CONFIG.esRepartidor(user.email)) {
+        window.location.href = './repartidor/index.html';
+      } else {
+        alert('❌ Usuario no autorizado');
+        supabaseLogout();
+      }
+    }
+
+    // Inicializar cliente Supabase y verificar auto-login
+    window.addEventListener('DOMContentLoaded', async () => {
+      supabaseClient = inicializarSupabase();
+      
+      if (!supabaseClient) {
+        console.error('❌ No se pudo inicializar Supabase');
+        document.getElementById('errorMessage').textContent = '⚠️ Error de configuración. Por favor, recarga la página.';
+        document.getElementById('errorMessage').style.display = 'block';
+        return;
+      }
+
+      // === AUTO-COMPLETAR EMAIL Y VERIFICAR AUTO-LOGIN ===
+      const emailInput = document.getElementById('emailInput');
+      const passwordInput = document.getElementById('passwordInput');
+      const loginFormDiv = document.getElementById('loginScreen');
+      const autoLoginMessage = document.getElementById('autoLoginMessage');
+      
+      // Auto-completar email si existe
+      const savedEmail = localStorage.getItem('sabrofood_last_email');
+      if (savedEmail && emailInput) {
+        emailInput.value = savedEmail;
+      }
+      
+      // Verificar si hay sesión activa (auto-login)
+      const rememberDevice = localStorage.getItem('sabrofood_remember_device') === 'true';
+      
+      if (rememberDevice) {
+        // Mostrar mensaje de auto-login
+        if (loginFormDiv) loginFormDiv.style.display = 'none';
+        if (autoLoginMessage) autoLoginMessage.style.display = 'block';
+        
+        // Verificar sesión en Supabase
+        const sesionActual = await supabaseVerificarSesion();
+        
+        if (sesionActual.authenticated) {
+          // Sesión válida - redirigir automáticamente
+          console.log('✅ Auto-login exitoso');
+          
+          // Esperar 1 segundo para que el usuario vea el mensaje
+          setTimeout(() => {
+            // Verificar rol y redirigir
+            verificarRolYRedirigir(sesionActual.user);
+          }, 1000);
+        } else {
+          // Sesión expirada - mostrar formulario
+          console.log('⚠️ Sesión expirada, mostrando login');
+          if (loginFormDiv) loginFormDiv.style.display = 'block';
+          if (autoLoginMessage) autoLoginMessage.style.display = 'none';
+        }
+      } else {
+        // Sin preferencia de recordar - verificar sesión normal sin auto-login
+        try {
+          const sesionActual = await supabaseVerificarSesion();
+          if (sesionActual.authenticated) {
+            // Aplicar redirección basada en roles
+            const userEmail = sesionActual.user?.email;
+            
+            if (ROLES_CONFIG.esAdmin(userEmail)) {
+              // Admin ve pantalla de selección
+              mostrarSeleccionRol();
+            } else if (ROLES_CONFIG.esRepartidor(userEmail)) {
+              // Repartidor va directo a su panel
+              window.location.href = './repartidor/index.html';
+            } else {
+              // Usuario no autorizado - cerrar sesión
+              console.warn('⚠️ Usuario no autorizado:', userEmail);
+              await supabaseLogout();
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error al verificar sesión:', error);
+          // No mostrar error al usuario, simplemente mostrar login
+        }
+      }
+    });
+
+    // Manejar login
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('emailInput').value;
+      const password = document.getElementById('passwordInput').value;
+      const remember = document.getElementById('rememberDevice').checked;
+      const errorMsg = document.getElementById('errorMessage');
+      const btnLogin = e.target.querySelector('.btn-login');
+      
+      // Deshabilitar botón durante el login
+      btnLogin.disabled = true;
+      btnLogin.textContent = '⏳ Ingresando...';
+      
+      try {
+        const resultado = await supabaseLogin(email, password, remember);
+        
+        if (resultado.success) {
+          errorMsg.style.display = 'none';
+          
+          // Obtener información del usuario autenticado
+          try {
+            const { data: { user } } = await supabaseClient.auth.getUser();
+            
+            // Redirección basada en email (roles automáticos)
+            verificarRolYRedirigir(user);
+            
+          } catch (authError) {
+            console.error('❌ Error al obtener información del usuario:', authError);
+            errorMsg.textContent = '❌ Error al procesar autenticación';
+            errorMsg.style.display = 'block';
+          }
+        } else {
+          errorMsg.textContent = '❌ Email o contraseña incorrectos';
+          errorMsg.style.display = 'block';
+          // Solo limpiar contraseña, mantener email para mejor UX
+          document.getElementById('passwordInput').value = '';
+          document.getElementById('passwordInput').focus();
+        }
+      } catch (error) {
+        errorMsg.textContent = '❌ Error al iniciar sesión';
+        errorMsg.style.display = 'block';
+        // Limpiar solo contraseña en caso de error
+        document.getElementById('passwordInput').value = '';
+      } finally {
+        btnLogin.disabled = false;
+        btnLogin.textContent = '🔓 Ingresar';
+      }
+    });
+
+    // Mostrar pantalla de selección de rol
+    function mostrarSeleccionRol() {
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('roleScreen').style.display = 'block';
+    }
+
+    // Seleccionar rol y redirigir
+    function seleccionarRol(rol) {
+      if (rol === 'repartidor') {
+        window.location.href = 'repartidor/index.html';
+      } else if (rol === 'local') {
+        window.location.href = 'local/index.html';
+      }
+    }
+
+    // Cerrar sesión completa
+    async function cerrarSesionCompleta() {
+      if (confirm('¿Seguro que deseas cerrar sesión?')) {
+        // Limpiar preferencia de "recordar dispositivo"
+        localStorage.removeItem('sabrofood_remember_device');
+        
+        await supabaseLogout();
+        window.location.reload();
+      }
+    }
+  </script>
+
+</body>
+</html>
