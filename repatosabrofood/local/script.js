@@ -1,6 +1,21 @@
 // === CONFIGURACIÓN ===
 // SUPABASE_CONFIG viene de shared/supabase-config.js
-// SUPABASE_CONFIG viene de shared/supabase-config.js
+
+// === VARIABLES GLOBALES ===
+let productosDisponibles = []; // Catálogo de productos desde Supabase
+let ultimaActualizacionCatalogo = null; // Timestamp de última carga del catálogo
+let productoSeleccionado = null; // Producto actualmente seleccionado del catálogo
+
+// === UTILIDADES ===
+/**
+ * Formatear número como moneda chilena
+ * @param {number} valor - Valor numérico
+ * @returns {string} - Valor formateado (ej: "29.990")
+ */
+function formatoMoneda(valor) {
+  if (!valor || isNaN(valor)) return '0';
+  return Math.floor(valor).toLocaleString('es-CL');
+}
 
 // === SISTEMA DE MODO OFFLINE ===
 const OfflineManager = {
@@ -276,6 +291,8 @@ async function verificarPermisoLocal() {
 
 // Inicializar estado de conexión al cargar
 document.addEventListener('DOMContentLoaded', async () => {
+  console.log('🔧 Iniciando aplicación...');
+  
   // Inicializar Supabase client desde shared config
   supabase_client = inicializarSupabase();
   
@@ -283,14 +300,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('✅ Cliente Supabase inicializado en LOCAL');
   } else {
     console.error('❌ Error: No se pudo inicializar Supabase');
+    alert('Error crítico: No se pudo conectar a la base de datos');
+    return;
   }
   
   // Verificar permisos antes de continuar (ya incluye manejo de errores interno)
   const tienePermiso = await verificarPermisoLocal();
-  if (!tienePermiso) return;
+  if (!tienePermiso) {
+    console.log('❌ Sin permisos - Redirigiendo...');
+    return;
+  }
+  
+  console.log('✅ Permisos verificados - Continuando inicialización...');
   
   OfflineManager.actualizarEstadoConexion();
   OfflineManager.actualizarContadorCola();
+  
+  // Cargar catálogo de productos
+  await cargarCatalogoProductos();
+  
+  // Actualizar indicador cada minuto
+  setInterval(() => {
+    actualizarIndicadorActualizacion();
+  }, 60000); // 60 segundos
+  
+  // Configurar event listeners para tipo de producto
+  configurarSelectoresTipoProducto();
+  
+  // 🔥 CARGAR PEDIDOS INICIALES (MOVIDO AQUÍ)
+  console.log('📦 Cargando pedidos iniciales...');
+  await cargarPedidos();
+  
+  // Activar tiempo real después de cargar pedidos
+  console.log('⚡ Activando sincronización en tiempo real...');
+  activarTiempoReal();
+  activarTiempoRealCarga();
+  
+  console.log('✅ Aplicación inicializada completamente');
 });
 
 // === VALIDACIÓN Y SEGURIDAD ===
@@ -1245,6 +1291,14 @@ function notificarNuevoPedido(pedido) {
 async function cargarPedidos() {
   const [statusEl, resultadosEl] = getElements('status', 'resultados');
   
+  // 🔥 VERIFICAR QUE SUPABASE ESTÉ INICIALIZADO
+  if (!supabase_client) {
+    console.error('❌ supabase_client no está inicializado');
+    statusEl.innerText = 'Estado: ERROR - Cliente no inicializado';
+    resultadosEl.innerHTML = '<div class="item">❌ Error crítico: El cliente de Supabase no está inicializado. Recarga la página.</div>';
+    return;
+  }
+  
   statusEl.innerText = 'Estado: Conectando...';
   
   try {
@@ -1392,6 +1446,7 @@ async function guardarPedido() {
       asignado_a: asignadoEl?.value || null, // Asignación de chofer (null si no está asignado)
       created_at: new Date().toISOString(),
       items: lineasPedido.map(item => ({
+        producto_id: item.producto_id || null, // ⚡ INCLUIR para descuento de stock
         nombre: Validator.sanitizeHTML(item.nombre),
         cantidad: parseInt(item.cantidad),
         precio: parseInt(item.precio)
@@ -1536,6 +1591,23 @@ async function anularPedido(docId, btnElement = null) {
   }
 
   try {
+    // Obtener datos del pedido completos antes de anular
+    const { data: pedido, error: errorGet } = await supabase_client
+      .from('pedidos')
+      .select('*')
+      .eq('id', docId)
+      .single();
+    
+    if (errorGet) {
+      throw new Error(errorGet.message);
+    }
+    
+    // 🔥 DEVOLVER STOCK DE ITEMS MARCADOS EN CARGA
+    await devolverStockItemsMarcados(docId, pedido);
+    
+    // Verificar si el pedido ya estaba entregado (necesita devolución de stock)
+    const yaEstregado = pedido.entregado === true && pedido.estado !== 'ANULADO';
+    
     // Actualizar pedido en Supabase
     const { error } = await supabase_client
       .from('pedidos')
@@ -1549,8 +1621,14 @@ async function anularPedido(docId, btnElement = null) {
       throw new Error(error.message);
     }
     
-    // Éxito
-    ErrorHandler.mostrarExito('🚫 Pedido marcado como ANULADO (no se contabiliza en caja)');
+    // Si estaba entregado, devolver stock
+    if (yaEstregado) {
+      await devolverStockPedido(docId, pedido);
+      ErrorHandler.mostrarExito('🚫 Pedido ANULADO y stock restaurado. El encargado ha sido notificado.');
+    } else {
+      ErrorHandler.mostrarExito('🚫 Pedido marcado como ANULADO (no se contabiliza en caja)');
+    }
+    
     cargarPedidos();
     
   } catch (error) {
@@ -2105,6 +2183,9 @@ async function confirmarEntregaPago(docId, pedido) {
   if (error) {
     alert('Error al confirmar entrega: ' + error.message);
   } else {
+    // ✅ STOCK YA SE DESCONTÓ AL MARCAR ITEMS EN "VER CARGA"
+    // (La función descontarStockItem() se ejecuta desde agregarItemMarcado())
+    
     document.getElementById('modalPago').remove();
     ErrorHandler.mostrarExito('✅ Pedido entregado y registrado correctamente');
     cargarPedidos();
@@ -2526,7 +2607,12 @@ async function actualizarPedido(docId) {
       telefono: telefono,
       metodo_pago: document.getElementById('metodoPago').value,
       fecha: document.getElementById('fechaEntrega').value,
-      items: lineasPedido,
+      items: lineasPedido.map(item => ({
+        producto_id: item.producto_id || null, // ⚡ INCLUIR para descuento de stock
+        nombre: item.nombre,
+        cantidad: item.cantidad,
+        precio: item.precio
+      })),
       total: total,
       notas: document.getElementById('notas').value.trim() || null,
       updated_at: new Date().toISOString()
@@ -2763,44 +2849,679 @@ function renderLineasPedido() {
   if (totalDiv) totalDiv.textContent = 'Total: $' + total.toLocaleString('es-CL');
 }
 
-// Añadir producto al carrito con validación
-function anadirProducto() {
-  const [productoEl, cantidadEl, precioEl] = getElements('itemProducto', 'itemCantidad', 'itemPrecio');
+// ==================================================
+// SISTEMA DE INTEGRACIÓN CON CATÁLOGO DE PRODUCTOS
+// ==================================================
+
+/**
+ * Cargar catálogo de productos desde Supabase
+ * Excluye productos de tipo "granel" para mostrar solo productos empacados (sacos)
+ */
+async function cargarCatalogoProductos(mostrarMensaje = false) {
+  try {
+    if (mostrarMensaje) {
+      console.log('🔄 Recargando catálogo de productos...');
+    }
+    
+    const { data, error } = await supabase_client
+      .from('productos')
+      .select('id, nombre, categoria, marca, stock, stock_minimo_sacos, precio, tipo')
+      .neq('tipo', 'granel') // Excluir productos a granel
+      .order('nombre', { ascending: true });
+    
+    if (error) throw error;
+    
+    // Filtrar también por nombre (por si acaso no tienen el campo tipo)
+    productosDisponibles = (data || []).filter(p => 
+      !p.nombre.toLowerCase().includes('(granel)')
+    );
+    
+    // Actualizar timestamp
+    ultimaActualizacionCatalogo = new Date();
+    
+    console.log(`📦 ${productosDisponibles.length} productos cargados del catálogo`);
+    actualizarIndicadorActualizacion();
+    
+    if (mostrarMensaje) {
+      mostrarNotificacionTemporal('✅ Catálogo actualizado');
+    }
+    
+  } catch (error) {
+    console.error('Error cargando catálogo de productos:', error);
+    ErrorHandler.mostrarError('No se pudo cargar el catálogo de productos');
+  }
+}
+
+/**
+ * Recargar catálogo manualmente (botón)
+ */
+async function recargarCatalogoManual() {
+  await cargarCatalogoProductos(true);
+}
+
+/**
+ * Actualizar stock local en memoria (sin consultar BD)
+ * @param {number} productoId - ID del producto
+ * @param {number} cantidadCambio - Cantidad a sumar/restar (negativo para descuento)
+ */
+function actualizarStockLocal(productoId, cantidadCambio) {
+  const producto = productosDisponibles.find(p => p.id === productoId);
+  if (producto) {
+    const stockAnterior = producto.stock;
+    producto.stock = Math.max(0, producto.stock + cantidadCambio);
+    console.log(`🔄 Stock local actualizado: ${producto.nombre} (${stockAnterior} → ${producto.stock})`);
+    
+    // Si hay búsqueda activa, refrescar resultados
+    const searchInput = document.getElementById('searchProductInput');
+    if (searchInput && searchInput.value.trim()) {
+      filtrarProductos(searchInput.value);
+    }
+  }
+}
+
+/**
+ * Actualizar indicador visual de última actualización
+ */
+function actualizarIndicadorActualizacion() {
+  const indicador = document.getElementById('indicadorActualizacion');
+  if (!indicador || !ultimaActualizacionCatalogo) return;
   
-  const validation = Validator.validarProducto(
-    productoEl.value, 
-    cantidadEl.value, 
-    precioEl.value
-  );
+  const ahora = new Date();
+  const diffMs = ahora - ultimaActualizacionCatalogo;
+  const diffMin = Math.floor(diffMs / 60000);
   
-  if (!validation.valido) {
-    ErrorHandler.mostrarError('Errores en el producto:\n• ' + validation.errores.join('\n• '));
+  let texto = '';
+  if (diffMin < 1) {
+    texto = 'Actualizado hace menos de 1 min';
+  } else if (diffMin === 1) {
+    texto = 'Actualizado hace 1 min';
+  } else {
+    texto = `Actualizado hace ${diffMin} min`;
+  }
+  
+  indicador.textContent = texto;
+}
+
+/**
+ * Mostrar notificación temporal (toast)
+ */
+function mostrarNotificacionTemporal(mensaje, duracion = 2000) {
+  // Crear elemento si no existe
+  let toast = document.getElementById('toastNotificacion');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toastNotificacion';
+    toast.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 10000;
+      font-weight: 500;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    `;
+    document.body.appendChild(toast);
+  }
+  
+  toast.textContent = mensaje;
+  toast.style.opacity = '1';
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+  }, duracion);
+}
+
+/**
+ * Filtrar y mostrar resultados de búsqueda de productos
+ */
+function filtrarProductos(query) {
+  const resultsContainer = document.getElementById('productSearchResults');
+  if (!resultsContainer) return;
+  
+  // Limpiar resultados
+  resultsContainer.innerHTML = '';
+  
+  // Si no hay query, ocultar resultados
+  if (!query || query.trim().length < 2) {
+    resultsContainer.style.display = 'none';
     return;
   }
   
+  // Filtrar productos
+  const queryLower = query.toLowerCase();
+  const productosFiltrados = productosDisponibles.filter(producto => {
+    return (
+      producto.nombre.toLowerCase().includes(queryLower) ||
+      (producto.marca && producto.marca.toLowerCase().includes(queryLower)) ||
+      (producto.categoria && producto.categoria.toLowerCase().includes(queryLower))
+    );
+  });
+  
+  // Mostrar resultados
+  if (productosFiltrados.length === 0) {
+    resultsContainer.innerHTML = `
+      <div class="search-empty-state">
+        <div class="search-empty-state-icon">🔍</div>
+        <div class="search-empty-state-title">No se encontraron productos</div>
+        <div class="search-empty-state-text">Intenta con otro término de búsqueda</div>
+      </div>
+    `;
+    resultsContainer.style.display = 'block';
+    return;
+  }
+  
+  // Generar tarjetas de productos
+  resultsContainer.innerHTML = productosFiltrados.map(producto => {
+    const stock = Math.floor(producto.stock || 0);
+    const stockMinimo = producto.stock_minimo_sacos || 0;
+    
+    // Determinar clase de stock
+    let stockClass = 'stock-ok';
+    let stockText = `${stock} unid.`;
+    
+    if (stock === 0) {
+      stockClass = 'stock-out';
+      stockText = 'Sin stock';
+    } else if (stock <= stockMinimo) {
+      stockClass = 'stock-low';
+      stockText = `⚠️ ${stock} unid.`;
+    } else {
+      stockText = `✅ ${stock} unid.`;
+    }
+    
+    return `
+      <div class="product-result-card" data-producto-id="${producto.id}" onclick="seleccionarProducto(${producto.id})">
+        <div class="product-result-info">
+          <div class="product-result-name">${producto.nombre}</div>
+          <div class="product-result-meta">
+            ${producto.categoria ? `<span class="product-result-category">${producto.categoria}</span>` : ''}
+            <span class="product-result-price">$${formatoMoneda(producto.precio || 0)}</span>
+          </div>
+        </div>
+        <span class="product-result-stock ${stockClass}">${stockText}</span>
+      </div>
+    `;
+  }).join('');
+  
+  resultsContainer.style.display = 'block';
+}
+
+/**
+ * Seleccionar un producto del buscador
+ */
+function seleccionarProducto(productoId) {
+  const producto = productosDisponibles.find(p => p.id === productoId);
+  if (!producto) return;
+  
+  // Guardar producto seleccionado
+  productoSeleccionado = producto;
+  
+  // Ocultar resultados de búsqueda
+  const resultsContainer = document.getElementById('productSearchResults');
+  if (resultsContainer) {
+    resultsContainer.style.display = 'none';
+  }
+  
+  // Limpiar input de búsqueda
+  const searchInput = document.getElementById('searchProductInput');
+  if (searchInput) {
+    searchInput.value = '';
+  }
+  
+  // Ocultar botón limpiar búsqueda
+  const btnClear = document.getElementById('btnClearSearchProduct');
+  if (btnClear) {
+    btnClear.style.display = 'none';
+  }
+  
+  // Mostrar tarjeta de producto seleccionado
+  mostrarProductoSeleccionado(producto);
+  
+  // Enfocar campo de cantidad
+  const inputCantidad = document.getElementById('itemCantidad');
+  if (inputCantidad) {
+    inputCantidad.focus();
+    inputCantidad.select();
+  }
+}
+
+/**
+ * Mostrar tarjeta del producto seleccionado
+ */
+function mostrarProductoSeleccionado(producto) {
+  const card = document.getElementById('selectedProductCard');
+  if (!card) return;
+  
+  const stock = Math.floor(producto.stock || 0);
+  const stockMinimo = producto.stock_minimo_sacos || 0;
+  
+  let stockText = '';
+  if (stock === 0) {
+    stockText = '⚠️ Sin stock';
+  } else if (stock <= stockMinimo) {
+    stockText = `⚠️ Stock: ${stock}`;
+  } else {
+    stockText = `✅ Stock: ${stock}`;
+  }
+  
+  card.querySelector('.selected-product-name').textContent = producto.nombre;
+  card.querySelector('.selected-product-price').textContent = `$${formatoMoneda(producto.precio || 0)}`;
+  card.querySelector('.selected-product-stock').textContent = stockText;
+  
+  card.style.display = 'flex';
+}
+
+/**
+ * Limpiar selección de producto
+ */
+function limpiarSeleccionProducto() {
+  productoSeleccionado = null;
+  
+  const card = document.getElementById('selectedProductCard');
+  if (card) {
+    card.style.display = 'none';
+  }
+  
+  // Enfocar input de búsqueda
+  const searchInput = document.getElementById('searchProductInput');
+  if (searchInput) {
+    searchInput.focus();
+  }
+}
+
+/**
+ * Configurar event listeners para cambiar entre tipo de producto y buscador
+ */
+function configurarSelectoresTipoProducto() {
+  const radioCatalogo = document.getElementById('radioProductoCatalogo');
+  const radioManual = document.getElementById('radioProductoManual');
+  const containerCatalogo = document.getElementById('containerProductoCatalogo');
+  const containerManual = document.getElementById('containerProductoManual');
+  const searchInput = document.getElementById('searchProductInput');
+  const btnClear = document.getElementById('btnClearSearchProduct');
+  const btnRemoveSelection = document.getElementById('btnRemoveSelection');
+  
+  if (!radioCatalogo || !radioManual) return;
+  
+  // Cambiar entre catálogo y manual
+  function actualizarVista() {
+    if (radioCatalogo.checked) {
+      containerCatalogo.style.display = 'block';
+      containerManual.style.display = 'none';
+      if (searchInput) searchInput.focus();
+    } else {
+      containerCatalogo.style.display = 'none';
+      containerManual.style.display = 'block';
+      limpiarSeleccionProducto();
+    }
+  }
+  
+  radioCatalogo.addEventListener('change', actualizarVista);
+  radioManual.addEventListener('change', actualizarVista);
+  
+  // Event listener para búsqueda en tiempo real
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value;
+      filtrarProductos(query);
+      
+      // Mostrar/ocultar botón limpiar
+      if (btnClear) {
+        btnClear.style.display = query ? 'block' : 'none';
+      }
+    });
+    
+    // Manejar Enter para seleccionar primer resultado
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const resultsContainer = document.getElementById('productSearchResults');
+        const firstCard = resultsContainer ? resultsContainer.querySelector('.product-result-card') : null;
+        if (firstCard) {
+          const productoId = firstCard.dataset.productoId;
+          if (productoId) {
+            seleccionarProducto(parseInt(productoId));
+          }
+        }
+      }
+    });
+    
+    // Enfocar al abrir
+    searchInput.focus();
+  }
+  
+  // Botón limpiar búsqueda
+  if (btnClear) {
+    btnClear.addEventListener('click', () => {
+      if (searchInput) {
+        searchInput.value = '';
+        searchInput.focus();
+      }
+      btnClear.style.display = 'none';
+      const resultsContainer = document.getElementById('productSearchResults');
+      if (resultsContainer) {
+        resultsContainer.style.display = 'none';
+      }
+    });
+  }
+  
+  // Botón remover selección
+  if (btnRemoveSelection) {
+    btnRemoveSelection.addEventListener('click', limpiarSeleccionProducto);
+  }
+  
+  // Inicializar vista
+  actualizarVista();
+}
+
+/**
+ * Crear alerta de producto sin stock
+ */
+async function crearAlertaSinStock(producto, cantidadSolicitada, stockDisponible) {
+  try {
+    await supabase_client
+      .from('alertas_sistema')
+      .insert([{
+        tipo: 'SIN_STOCK',
+        titulo: `Sin stock: ${producto.nombre}`,
+        mensaje: `Se agendó un pedido de ${cantidadSolicitada} unidades pero solo hay ${stockDisponible} en stock.`,
+        producto_id: producto.id,
+        leido: false
+      }]);
+    
+    console.log('⚠️ Alerta de stock creada');
+  } catch (error) {
+    console.error('Error creando alerta:', error);
+  }
+}
+
+/**
+ * Descontar stock de productos al marcar pedido como entregado
+ * @param {string} pedidoId - ID del pedido
+ * @param {object} pedido - Datos del pedido
+ */
+async function descontarStockPedido(pedidoId, pedido) {
+  try {
+    const items = pedido.items || [];
+    console.log('🔍 DEBUG - Items del pedido:', items);
+    
+    const productosConId = items.filter(item => item.producto_id);
+    console.log('🔍 DEBUG - Productos con ID (catálogo):', productosConId);
+    
+    if (productosConId.length === 0) {
+      console.log('📦 Pedido sin productos del catálogo, no se descuenta stock');
+      return;
+    }
+    
+    console.log(`📦 Procesando ${productosConId.length} productos para descuento de stock...`);
+    
+    for (const item of productosConId) {
+      try {
+        console.log(`🔄 Procesando: ${item.nombre} (ID: ${item.producto_id}, Cantidad: ${item.cantidad})`);
+        
+        // Obtener stock actual del producto
+        const { data: producto, error: errorGet } = await supabase_client
+          .from('productos')
+          .select('stock, nombre')
+          .eq('id', item.producto_id)
+          .single();
+        
+        if (errorGet) {
+          console.error(`❌ Error obteniendo producto ${item.producto_id}:`, errorGet);
+          continue;
+        }
+        
+        const stockAnterior = Math.floor(producto.stock || 0);
+        const nuevoStock = stockAnterior - item.cantidad;
+        
+        console.log(`   Stock anterior: ${stockAnterior}, Nuevo stock: ${nuevoStock}`);
+        
+        // Actualizar stock
+        const { error: errorUpdate } = await supabase_client
+          .from('productos')
+          .update({ stock: nuevoStock })
+          .eq('id', item.producto_id);
+        
+        if (errorUpdate) {
+          console.error(`❌ Error actualizando stock de ${item.nombre}:`, errorUpdate);
+          continue;
+        }
+        
+        // Registrar movimiento en tabla de auditoría
+        const { error: errorMovimiento } = await supabase_client
+          .from('movimientos_stock')
+          .insert([{
+            producto_id: item.producto_id,
+            pedido_id: pedidoId,
+            tipo: 'SALIDA',
+            cantidad: item.cantidad,
+            stock_anterior: stockAnterior,
+            stock_nuevo: nuevoStock,
+            usuario: 'sistema_reparto',
+            motivo: `Pedido entregado - ${pedido.nombre || 'Cliente'}`
+          }]);
+        
+        if (errorMovimiento) {
+          console.error(`⚠️ Error registrando movimiento:`, errorMovimiento);
+        }
+        
+        console.log(`✅ Stock actualizado: ${item.nombre} (${stockAnterior} → ${nuevoStock})`);
+        
+      } catch (error) {
+        console.error(`❌ Error procesando producto ${item.nombre}:`, error);
+      }
+    }
+    
+    console.log('✅ Descuento de stock completado');
+    
+  } catch (error) {
+    console.error('❌ Error en descontarStockPedido:', error);
+  }
+}
+
+/**
+ * Devolver stock de productos al anular un pedido entregado
+ * @param {string} pedidoId - ID del pedido
+ * @param {object} pedido - Datos del pedido
+ */
+async function devolverStockPedido(pedidoId, pedido) {
+  try {
+    const items = pedido.items || [];
+    const productosConId = items.filter(item => item.producto_id);
+    
+    if (productosConId.length === 0) {
+      console.log('📦 Pedido sin productos del catálogo, no se devuelve stock');
+      return;
+    }
+    
+    console.log(`♻️ Devolviendo stock de ${productosConId.length} productos...`);
+    
+    for (const item of productosConId) {
+      try {
+        // Obtener stock actual del producto
+        const { data: producto, error: errorGet } = await supabase_client
+          .from('productos')
+          .select('stock, nombre')
+          .eq('id', item.producto_id)
+          .single();
+        
+        if (errorGet) {
+          console.error(`Error obteniendo producto ${item.producto_id}:`, errorGet);
+          continue;
+        }
+        
+        const stockAnterior = Math.floor(producto.stock || 0);
+        const nuevoStock = stockAnterior + item.cantidad;
+        
+        // Actualizar stock
+        const { error: errorUpdate } = await supabase_client
+          .from('productos')
+          .update({ stock: nuevoStock })
+          .eq('id', item.producto_id);
+        
+        if (errorUpdate) {
+          console.error(`Error actualizando stock de ${item.nombre}:`, errorUpdate);
+          continue;
+        }
+        
+        // Registrar movimiento en tabla de auditoría
+        await supabase_client
+          .from('movimientos_stock')
+          .insert([{
+            producto_id: item.producto_id,
+            pedido_id: pedidoId,
+            tipo: 'DEVOLUCION',
+            cantidad: item.cantidad,
+            stock_anterior: stockAnterior,
+            stock_nuevo: nuevoStock,
+            usuario: 'sistema_reparto',
+            motivo: `Pedido anulado - Devolución de stock`
+          }]);
+        
+        console.log(`♻️ Stock devuelto: ${item.nombre} (${stockAnterior} → ${nuevoStock})`);
+        
+      } catch (error) {
+        console.error(`Error procesando producto ${item.nombre}:`, error);
+      }
+    }
+    
+    // Crear alerta para el encargado
+    await supabase_client
+      .from('alertas_sistema')
+      .insert([{
+        tipo: 'PEDIDO_ANULADO',
+        titulo: '⚠️ Pedido anulado - Stock restaurado',
+        mensaje: `El pedido #${pedidoId} fue anulado. Se restauraron ${productosConId.length} productos al inventario.`,
+        pedido_id: pedidoId,
+        leido: false
+      }]);
+    
+    console.log('✅ Devolución de stock y alerta completadas');
+    
+  } catch (error) {
+    console.error('Error en devolverStockPedido:', error);
+  }
+}
+
+// ==================================================
+// FIN SISTEMA DE INTEGRACIÓN CON CATÁLOGO
+// ==================================================
+
+// Añadir producto al carrito con validación
+function anadirProducto() {
+  const tipoProducto = document.querySelector('input[name="tipoProducto"]:checked').value;
+  const cantidadEl = document.getElementById('itemCantidad');
+  
+  let productoData = {};
+  
+  if (tipoProducto === 'catalogo') {
+    // Producto del catálogo - usando producto seleccionado del buscador
+    if (!productoSeleccionado) {
+      ErrorHandler.mostrarError('Debes buscar y seleccionar un producto del catálogo');
+      return;
+    }
+    
+    const producto = productoSeleccionado;
+    
+    // Validar cantidad
+    const cantidad = parseInt(cantidadEl.value);
+    
+    if (!cantidad || cantidad <= 0) {
+      ErrorHandler.mostrarError('Cantidad debe ser mayor a 0');
+      return;
+    }
+    
+    // Validar stock disponible
+    const stockDisponible = Math.floor(producto.stock || 0);
+    const stockMinimo = producto.stock_minimo_sacos || 0;
+    
+    // Mostrar alerta si no hay stock suficiente (pero permitir continuar)
+    if (stockDisponible < cantidad) {
+      const confirmar = confirm(
+        `⚠️ ALERTA DE STOCK\n\n` +
+        `Producto: ${producto.nombre}\n` +
+        `Stock disponible: ${stockDisponible} unidades\n` +
+        `Cantidad solicitada: ${cantidad} unidades\n\n` +
+        `No hay stock suficiente.\n` +
+        `¿Deseas agendar el pedido de todas formas?`
+      );
+      
+      if (!confirmar) return;
+      
+      // Crear alerta en sistema
+      crearAlertaSinStock(producto, cantidad, stockDisponible);
+    } else if (stockDisponible <= stockMinimo) {
+      // Advertencia de stock bajo
+      ErrorHandler.mostrarWarning(
+        `⚠️ Stock bajo: ${producto.nombre} (${stockDisponible} disponibles)`
+      );
+    }
+    
+    productoData = {
+      producto_id: producto.id, // ID para descuento de stock
+      nombre: Validator.sanitizeHTML(producto.nombre),
+      cantidad: cantidad,
+      precio: producto.precio || 0
+    };
+    
+  } else {
+    // Producto manual (granel)
+    const productoEl = document.getElementById('itemProducto');
+    const precioEl = document.getElementById('itemPrecio');
+    
+    const validation = Validator.validarProducto(
+      productoEl.value, 
+      cantidadEl.value, 
+      precioEl.value
+    );
+    
+    if (!validation.valido) {
+      ErrorHandler.mostrarError('Errores en el producto:\n• ' + validation.errores.join('\n• '));
+      return;
+    }
+    
+    productoData = {
+      producto_id: null, // No tiene ID (es manual, no descuenta stock)
+      nombre: validation.valor.nombre,
+      cantidad: validation.valor.cantidad,
+      precio: validation.valor.precio
+    };
+    
+    productoEl.value = '';
+    precioEl.value = '';
+  }
+  
   // Verificar duplicados
-  const productoExistente = lineasPedido.find(p => 
-    p.nombre.toLowerCase() === validation.valor.nombre.toLowerCase()
-  );
+  const productoExistente = lineasPedido.find(p => {
+    // Si ambos tienen producto_id, comparar por ID
+    if (p.producto_id && productoData.producto_id) {
+      return p.producto_id === productoData.producto_id;
+    }
+    // Si no, comparar por nombre
+    return p.nombre.toLowerCase() === productoData.nombre.toLowerCase();
+  });
   
   if (productoExistente) {
     // Actualizar cantidad del producto existente
-    productoExistente.cantidad += validation.valor.cantidad;
-    ErrorHandler.mostrarExito(`Cantidad actualizada para ${validation.valor.nombre}`);
+    productoExistente.cantidad += productoData.cantidad;
+    ErrorHandler.mostrarExito(`Cantidad actualizada para ${productoData.nombre}`);
   } else {
     // Agregar nuevo producto
-    lineasPedido.push(validation.valor);
-    ErrorHandler.mostrarExito(`${validation.valor.nombre} agregado al pedido`);
+    lineasPedido.push(productoData);
+    ErrorHandler.mostrarExito(`${productoData.nombre} agregado al pedido`);
   }
   
   // Limpiar campos
-  productoEl.value = '';
+  if (tipoProducto === 'catalogo') {
+    limpiarSeleccionProducto();
+  }
   cantidadEl.value = 1;
-  precioEl.value = '';
   renderLineasPedido();
-  
-  // Enfocar el campo de producto para agregar más rápidamente
-  productoEl.focus();
 }
 
 // Limpiar formulario y productos
@@ -2809,6 +3530,27 @@ function limpiarFormulario() {
   lineasPedido = [];
   renderLineasPedido();
   setFechaHoyDefault();
+  
+  // Limpiar producto seleccionado del buscador
+  limpiarSeleccionProducto();
+  
+  // Limpiar input de búsqueda
+  const searchInput = document.getElementById('searchProductInput');
+  if (searchInput) {
+    searchInput.value = '';
+  }
+  
+  // Ocultar resultados de búsqueda
+  const resultsContainer = document.getElementById('productSearchResults');
+  if (resultsContainer) {
+    resultsContainer.style.display = 'none';
+  }
+  
+  // Ocultar botón limpiar búsqueda
+  const btnClear = document.getElementById('btnClearSearchProduct');
+  if (btnClear) {
+    btnClear.style.display = 'none';
+  }
   
   // Establecer chofer por defecto
   const choferSelect = document.getElementById('asignadoA');
@@ -3280,7 +4022,7 @@ function actualizarContadorPedidos(cantidad) {
 }
 
 // Abrir/Cerrar Modal de Formulario (nuevo pedido)
-function abrirModalFormulario() {
+async function abrirModalFormulario() {
   const [backdropEl, modalEl] = getElements('formModalBackdrop', 'formModal');
   backdropEl.style.display = 'flex';
   setTimeout(() => { modalEl.classList.add('show'); }, 10);
@@ -3289,6 +4031,15 @@ function abrirModalFormulario() {
   const choferSelect = document.getElementById('asignadoA');
   if (choferSelect) {
     choferSelect.value = 'repartidor_1';
+  }
+  
+  // 🔄 RECARGAR CATÁLOGO para tener stock actualizado
+  await cargarCatalogoProductos(false);
+  
+  // Si hay búsqueda activa, refiltrar con datos actualizados
+  const searchInput = document.getElementById('searchProductInput');
+  if (searchInput && searchInput.value.trim()) {
+    filtrarProductos(searchInput.value);
   }
 }
 
@@ -3678,19 +4429,15 @@ function inicializarAppCompleta() {
   // Establecer fecha por defecto (hoy)
   setFechaHoyDefault();
   
-  // Cargar pedidos iniciales
-  cargarPedidos();
-  
-  // Activar tiempo real después de cargar pedidos
-  activarTiempoReal();
-  activarTiempoRealCarga(); // Sincronizar checkboxes de carga entre usuarios
+  // ⚠️ NOTA: cargarPedidos() ya se llama en el primer DOMContentLoaded
+  // No duplicar la carga aquí
 }
 
 // Event listeners para búsqueda y filtros
 document.addEventListener('DOMContentLoaded', function() {
   // La autenticación ya está verificada en el HTML (route protection)
   // Si llegamos aquí, el usuario está autenticado
-  console.log('✅ Usuario autenticado - Inicializando aplicación...');
+  console.log('🎯 Configurando event listeners de la interfaz...');
   
   // Inicializar la aplicación
   inicializarApp();
@@ -4255,6 +5002,7 @@ function generarResumenCarga() {
     for (const item of pedido.items) {
       const nombreProducto = item.nombre || 'Producto sin nombre';
       const cantidad = parseInt(item.cantidad) || 1;
+      const productoId = item.producto_id || null; // ID del producto para descuento de stock
       
       // CLAVE: NO agrupar, crear entrada independiente por pedido
       arraysPrioridad[prioridad].push({
@@ -4262,6 +5010,7 @@ function generarResumenCarga() {
         cantidad: cantidad,
         cliente: nombreCliente,
         pedidoId: pedidoId,
+        productoId: productoId, // ⚡ INCLUIR PARA DESCUENTO DE STOCK
         // ID único para checkbox: pedido + producto
         checkboxId: `chk_pedido${pedidoId}_${normalizarNombreProducto(nombreProducto)}`
       });
@@ -4364,7 +5113,12 @@ async function mostrarModalCarga() {
         
         // Mostrar producto grande y cliente pequeño debajo
         items += `
-          <div class="item-carga${checkedClass}" data-checkbox-id="${checkboxId}">
+          <div class="item-carga${checkedClass}" 
+               data-checkbox-id="${checkboxId}"
+               data-producto-id="${item.productoId || ''}"
+               data-cantidad="${item.cantidad}"
+               data-nombre="${item.nombre}"
+               data-pedido-id="${item.pedidoId}">
             <input type="checkbox" class="checkbox-carga" id="${checkboxId}" ${checked}>
             <label for="${checkboxId}" class="item-texto">
               <div class="item-producto-nombre">${item.nombre}</div>
@@ -4396,22 +5150,77 @@ async function mostrarModalCarga() {
 /**
  * MEJORA 4: Handler con persistencia
  * Guarda/elimina items marcados en localStorage usando ID único (pedido + producto)
+ * 🔒 PROTECCIÓN: Deshabilita checkbox mientras procesa para prevenir doble clic
  */
-function handleCheckboxChange(event) {
+async function handleCheckboxChange(event) {
   if (event.target.classList.contains('checkbox-carga')) {
-    const itemCarga = event.target.closest('.item-carga');
+    const checkbox = event.target;
+    const itemCarga = checkbox.closest('.item-carga');
+    
     if (itemCarga) {
       const checkboxId = itemCarga.dataset.checkboxId;
-      const checked = event.target.checked;
+      const checked = checkbox.checked;
       
-      // Actualizar UI
-      itemCarga.classList.toggle('checked', checked);
+      // 🔒 DESHABILITAR checkbox para prevenir doble clic
+      checkbox.disabled = true;
       
-      // Actualizar localStorage usando el ID único
-      if (checked) {
-        agregarItemMarcado(checkboxId);
-      } else {
-        eliminarItemMarcado(checkboxId);
+      try {
+        // ⚡ EXTRAER DATOS PARA DESCUENTO DE STOCK
+        const itemInfo = {
+          productoId: itemCarga.dataset.productoId ? parseInt(itemCarga.dataset.productoId) : null,
+          cantidad: parseInt(itemCarga.dataset.cantidad) || 0,
+          nombre: itemCarga.dataset.nombre || '',
+          pedidoId: itemCarga.dataset.pedidoId || ''
+        };
+        
+        // 🐛 DEBUG: Mostrar datos extraídos
+        console.log('🔍 DEBUG - Datos del item:', {
+          checkboxId,
+          productoId: itemCarga.dataset.productoId,
+          productoIdParseado: itemInfo.productoId,
+          cantidad: itemInfo.cantidad,
+          nombre: itemInfo.nombre
+        });
+        
+        // Actualizar UI
+        itemCarga.classList.toggle('checked', checked);
+        
+        // Actualizar Supabase usando el ID único
+        if (checked) {
+          console.log('📦 Marcando item con info:', itemInfo);
+          
+          if (!itemInfo.productoId) {
+            console.warn('⚠️ ADVERTENCIA: Item sin producto_id - NO se descontará stock');
+            console.warn('   Esto es normal para productos manuales o pedidos antiguos');
+          }
+          
+          await agregarItemMarcado(checkboxId, itemInfo);
+          
+          // 🔄 ACTUALIZAR catálogo local después de descontar
+          if (itemInfo.productoId) {
+            actualizarStockLocal(itemInfo.productoId, -itemInfo.cantidad);
+          }
+        } else {
+          await eliminarItemMarcado(checkboxId);
+          
+          // 🔄 ACTUALIZAR catálogo local después de devolver
+          if (itemInfo.productoId) {
+            actualizarStockLocal(itemInfo.productoId, itemInfo.cantidad);
+          }
+        }
+        
+      } catch (error) {
+        console.error('❌ Error en handleCheckboxChange:', error);
+        
+        // REVERTIR estado del checkbox en caso de error
+        checkbox.checked = !checked;
+        itemCarga.classList.toggle('checked', !checked);
+        
+        alert('Error al procesar el marcado. Por favor, intenta nuevamente.');
+        
+      } finally {
+        // 🔓 REACTIVAR checkbox después de procesar
+        checkbox.disabled = false;
       }
     }
   }
@@ -4554,27 +5363,48 @@ async function cargarItemsMarcados() {
 }
 
 /**
- * Agregar un item a la lista de marcados en Supabase
+ * Agregar un item a la lista de marcados en Supabase y descontar stock
  * @param {string} checkboxId - ID único del checkbox
+ * @param {object} itemInfo - Información del item (pedidoId, productoId, nombre, cantidad)
  */
-async function agregarItemMarcado(checkboxId) {
+async function agregarItemMarcado(checkboxId, itemInfo = null) {
   try {
     itemsMarcadosCache.add(checkboxId);
     
+    const insertData = { 
+      checkbox_id: checkboxId, 
+      marcado: true,
+      updated_at: new Date().toISOString()
+    };
+    
+    // Guardar info del pedido si está disponible
+    if (itemInfo) {
+      insertData.pedido_id = itemInfo.pedidoId;
+      insertData.producto_id = itemInfo.productoId;
+      insertData.cantidad = itemInfo.cantidad;
+      insertData.nombre_producto = itemInfo.nombre;
+    }
+    
     const { error } = await supabase_client
       .from('carga_marcados')
-      .upsert({ 
-        checkbox_id: checkboxId, 
-        marcado: true,
-        updated_at: new Date().toISOString()
-      }, { 
+      .upsert(insertData, { 
         onConflict: 'checkbox_id' 
       });
     
     if (error) {
       console.error('Error al marcar item:', error);
       itemsMarcadosCache.delete(checkboxId);
+      return;
     }
+    
+    // ⚡ DESCUENTO DE STOCK: Si hay producto_id, descontar stock
+    if (itemInfo && itemInfo.productoId) {
+      console.log('✅ Item tiene producto_id - Procediendo a descontar stock');
+      await descontarStockItem(itemInfo);
+    } else if (itemInfo) {
+      console.warn('⚠️ Item sin producto_id - No se descuenta stock (producto manual o antiguo)');
+    }
+    
   } catch (e) {
     console.error('Error al marcar item:', e);
     itemsMarcadosCache.delete(checkboxId);
@@ -4582,11 +5412,235 @@ async function agregarItemMarcado(checkboxId) {
 }
 
 /**
- * Eliminar un item de la lista de marcados en Supabase
+ * Descontar stock de UN SOLO producto al marcarlo en carga
+ * @param {object} itemInfo - {productoId, cantidad, nombre, pedidoId}
+ */
+async function descontarStockItem(itemInfo) {
+  try {
+    console.log(`🔄 Descontando stock de "${itemInfo.nombre}" (${itemInfo.cantidad} unid.)`);
+    
+    // Obtener stock actual
+    const { data: producto, error: errorGet } = await supabase_client
+      .from('productos')
+      .select('stock, nombre')
+      .eq('id', itemInfo.productoId)
+      .single();
+    
+    if (errorGet) {
+      console.error(`❌ Error obteniendo producto ${itemInfo.productoId}:`, errorGet);
+      return;
+    }
+    
+    const stockAnterior = Math.floor(producto.stock || 0);
+    const nuevoStock = stockAnterior - itemInfo.cantidad;
+    
+    console.log(`   Stock anterior: ${stockAnterior}, Nuevo stock: ${nuevoStock}`);
+    
+    // Actualizar stock
+    const { error: errorUpdate } = await supabase_client
+      .from('productos')
+      .update({ stock: nuevoStock })
+      .eq('id', itemInfo.productoId);
+    
+    if (errorUpdate) {
+      console.error(`❌ Error actualizando stock:`, errorUpdate);
+      return;
+    }
+    
+    // Registrar movimiento
+    await supabase_client
+      .from('movimientos_stock')
+      .insert([{
+        producto_id: itemInfo.productoId,
+        pedido_id: itemInfo.pedidoId,
+        tipo: 'SALIDA',
+        cantidad: itemInfo.cantidad,
+        stock_anterior: stockAnterior,
+        stock_nuevo: nuevoStock,
+        usuario: 'sistema_carga',
+        motivo: `Bulto cargado para reparto`
+      }]);
+    
+    console.log(`✅ Stock descontado: ${itemInfo.nombre} (${stockAnterior} → ${nuevoStock})`);
+    
+  } catch (error) {
+    console.error('❌ Error en descontarStockItem:', error);
+  }
+}
+
+/**
+ * Devolver stock cuando se desmarca un item de carga
+ * @param {string} checkboxId - ID del checkbox
+ */
+async function devolverStockItem(checkboxId) {
+  try {
+    // Obtener info del item desde carga_marcados
+    const { data, error } = await supabase_client
+      .from('carga_marcados')
+      .select('pedido_id, producto_id, cantidad, nombre_producto')
+      .eq('checkbox_id', checkboxId)
+      .single();
+    
+    if (error || !data || !data.producto_id) {
+      console.log('⚠️ Item no tiene producto_id, no se devuelve stock');
+      return;
+    }
+    
+    console.log(`♻️ Devolviendo stock de "${data.nombre_producto}" (${data.cantidad} unid.)`);
+    
+    // Obtener stock actual
+    const { data: producto, error: errorGet } = await supabase_client
+      .from('productos')
+      .select('stock, nombre')
+      .eq('id', data.producto_id)
+      .single();
+    
+    if (errorGet) {
+      console.error(`❌ Error obteniendo producto:`, errorGet);
+      return;
+    }
+    
+    const stockAnterior = Math.floor(producto.stock || 0);
+    const nuevoStock = stockAnterior + data.cantidad;
+    
+    // Actualizar stock
+    await supabase_client
+      .from('productos')
+      .update({ stock: nuevoStock })
+      .eq('id', data.producto_id);
+    
+    // 🗑️ ELIMINAR el movimiento de stock original (SALIDA) en vez de crear DEVOLUCION
+    console.log(`🗑️ Eliminando movimiento de stock del historial...`);
+    const { error: errorDelete } = await supabase_client
+      .from('movimientos_stock')
+      .delete()
+      .eq('producto_id', data.producto_id)
+      .eq('pedido_id', data.pedido_id)
+      .eq('tipo', 'SALIDA')
+      .eq('cantidad', data.cantidad);
+    
+    if (errorDelete) {
+      console.error('❌ Error eliminando movimiento:', errorDelete);
+    } else {
+      console.log(`✅ Movimiento eliminado del historial`);
+    }
+    
+    console.log(`✅ Stock devuelto: ${data.nombre_producto} (${stockAnterior} → ${nuevoStock})`);
+    
+  } catch (error) {
+    console.error('❌ Error en devolverStockItem:', error);
+  }
+}
+
+/**
+ * Devolver stock de TODOS los items marcados de un pedido (al anular pedido)
+ * @param {string} pedidoId - ID del pedido anulado
+ * @param {object} pedido - Objeto completo del pedido (opcional, para mejor logging)
+ */
+async function devolverStockItemsMarcados(pedidoId, pedido = null) {
+  try {
+    console.log(`♻️ Verificando items marcados del pedido ${pedidoId} para devolver stock...`);
+    
+    // Buscar TODOS los items de este pedido que estén marcados en carga
+    const { data: itemsMarcados, error } = await supabase_client
+      .from('carga_marcados')
+      .select('checkbox_id, producto_id, cantidad, nombre_producto')
+      .eq('pedido_id', pedidoId);
+    
+    if (error) {
+      console.error('❌ Error consultando items marcados:', error);
+      return;
+    }
+    
+    if (!itemsMarcados || itemsMarcados.length === 0) {
+      console.log('ℹ️ El pedido no tiene items marcados en carga - no hay stock para devolver');
+      return;
+    }
+    
+    console.log(`📦 Encontrados ${itemsMarcados.length} items marcados - Devolviendo stock...`);
+    
+    // Devolver stock de cada item marcado
+    let itemsDevueltos = 0;
+    for (const item of itemsMarcados) {
+      if (!item.producto_id) {
+        console.log(`⚠️ Item "${item.nombre_producto}" sin producto_id - omitiendo`);
+        continue;
+      }
+      
+      try {
+        // Obtener stock actual
+        const { data: producto, error: errorGet } = await supabase_client
+          .from('productos')
+          .select('stock, nombre')
+          .eq('id', item.producto_id)
+          .single();
+        
+        if (errorGet) {
+          console.error(`❌ Error obteniendo producto ${item.producto_id}:`, errorGet);
+          continue;
+        }
+        
+        const stockAnterior = Math.floor(producto.stock || 0);
+        const nuevoStock = stockAnterior + item.cantidad;
+        
+        // Actualizar stock
+        const { error: errorUpdate } = await supabase_client
+          .from('productos')
+          .update({ stock: nuevoStock })
+          .eq('id', item.producto_id);
+        
+        if (errorUpdate) {
+          console.error(`❌ Error actualizando stock:`, errorUpdate);
+          continue;
+        }
+        
+        // 🗑️ ELIMINAR el movimiento de stock original (SALIDA) en vez de crear DEVOLUCION
+        const { error: errorDeleteMov } = await supabase_client
+          .from('movimientos_stock')
+          .delete()
+          .eq('producto_id', item.producto_id)
+          .eq('pedido_id', pedidoId)
+          .eq('tipo', 'SALIDA')
+          .eq('cantidad', item.cantidad);
+        
+        if (errorDeleteMov) {
+          console.error(`❌ Error eliminando movimiento:`, errorDeleteMov);
+        }
+        
+        console.log(`  ✅ ${item.nombre_producto}: ${stockAnterior} → ${nuevoStock} (+${item.cantidad})`);
+        itemsDevueltos++;
+        
+      } catch (itemError) {
+        console.error(`❌ Error procesando item:`, itemError);
+      }
+    }
+    
+    // Eliminar TODOS los registros de carga_marcados de este pedido
+    const { error: errorDelete } = await supabase_client
+      .from('carga_marcados')
+      .delete()
+      .eq('pedido_id', pedidoId);
+    
+    if (errorDelete) {
+      console.error('❌ Error eliminando items de carga_marcados:', errorDelete);
+    }
+    
+    console.log(`✅ Stock devuelto exitosamente: ${itemsDevueltos} de ${itemsMarcados.length} items procesados`);
+    
+  } catch (error) {
+    console.error('❌ Error en devolverStockItemsMarcados:', error);
+  }
+}
+
+/**
+ * Eliminar un item de la lista de marcados en Supabase y devolver stock
  * @param {string} checkboxId - ID único del checkbox
  */
 async function eliminarItemMarcado(checkboxId) {
   try {
+    // Primero devolver el stock ANTES de borrar el registro
+    await devolverStockItem(checkboxId);
+    
     itemsMarcadosCache.delete(checkboxId);
     
     const { error } = await supabase_client

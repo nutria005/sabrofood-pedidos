@@ -248,18 +248,99 @@
         <fieldset class="form-section">
           <legend class="section-title">🛒 Productos del Pedido</legend>
           
-          <div class="form-row" style="display:grid;grid-template-columns:0.7fr 2fr 1fr 1fr;gap:8px;align-items:center;margin-bottom:8px;">
-            <label for="itemCantidad" class="sr-only">Cantidad</label>
-            <input id="itemCantidad" type="number" min="1" value="1" placeholder="Cant." style="width:100%;" aria-label="Cantidad de producto" />
+          <!-- Selector de tipo de producto -->
+          <div class="form-row" style="margin-bottom:10px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="radio" name="tipoProducto" value="catalogo" checked id="radioProductoCatalogo" />
+              <span>📦 Producto del catálogo</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="radio" name="tipoProducto" value="manual" id="radioProductoManual" />
+              <span>⚖️ Producto a granel (manual)</span>
+            </label>
+          </div>
+          
+          <!-- BUSCADOR INTELIGENTE DE PRODUCTOS (CATÁLOGO) -->
+          <div id="containerProductoCatalogo">
+            <!-- Indicador de actualización de stock -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding: 0 2px;">
+              <small id="indicadorActualizacion" style="color: #6b7280; font-size: 11px;">
+                Cargando catálogo...
+              </small>
+              <button onclick="recargarCatalogoManual()" 
+                      style="background: none; border: none; color: #667eea; cursor: pointer; font-size: 11px; padding: 3px 6px; display: flex; align-items: center; gap: 3px; border-radius: 4px; transition: all 0.2s;"
+                      onmouseover="this.style.background='#f3f4f6'"
+                      onmouseout="this.style.background='none'"
+                      title="Recargar catálogo de productos">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                </svg>
+                Actualizar
+              </button>
+            </div>
             
-            <label for="itemProducto" class="sr-only">Producto</label>
-            <input id="itemProducto" type="text" placeholder="Producto (ej. Cat Chow 3kg)" style="width:100%;" aria-label="Nombre del producto" />
+            <div class="product-search-box">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" class="search-icon">
+                <circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/>
+                <path d="M13 13l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <input type="text"
+                     id="searchProductInput"
+                     placeholder="🔍 Busca por nombre, marca o categoría..."
+                     class="product-search-input"
+                     autocomplete="off">
+              <button class="btn-clear-search-product" id="btnClearSearchProduct" style="display: none;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
             
-            <label for="itemPrecio" class="sr-only">Precio</label>
-            <input id="itemPrecio" type="number" min="0" step="1" placeholder="Precio" style="width:100%;" aria-label="Precio del producto" />
+            <!-- Resultados de búsqueda -->
+            <div id="productSearchResults" class="product-search-results" style="display:none;">
+              <!-- Las tarjetas de productos se insertarán aquí -->
+            </div>
             
-            <button type="button" id="btnAnadirItem" class="ghost" style="width:100%;font-size:1.1rem;" aria-label="Añadir producto al pedido">
-              ➕
+            <!-- Producto seleccionado -->
+            <div id="selectedProductCard" class="selected-product-card" style="display:none;">
+              <div class="selected-product-info">
+                <div class="selected-product-name"></div>
+                <div class="selected-product-details">
+                  <span class="selected-product-price"></span>
+                  <span class="selected-product-stock"></span>
+                </div>
+              </div>
+              <button type="button" class="btn-remove-selection" id="btnRemoveSelection">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          
+          <!-- INPUT MANUAL PARA GRANEL (OCULTO POR DEFECTO) -->
+          <div id="containerProductoManual" style="display:none;">
+            <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px;">
+              <div>
+                <label for="itemProducto" class="sr-only">Producto manual</label>
+                <input id="itemProducto" type="text" placeholder="Producto (ej. Master Dog granel)" style="width:100%;" aria-label="Nombre del producto" />
+              </div>
+              <div>
+                <label for="itemPrecio" class="sr-only">Precio</label>
+                <input id="itemPrecio" type="number" min="0" step="1" placeholder="Precio" style="width:100%;" aria-label="Precio del producto" />
+              </div>
+            </div>
+          </div>
+          
+          <!-- CANTIDAD Y BOTÓN AGREGAR -->
+          <div class="form-row" style="display:grid;grid-template-columns:1fr 2fr;gap:8px;align-items:center;margin-top:8px;">
+            <div>
+              <label for="itemCantidad" style="font-size:0.85rem;margin-bottom:3px;display:block;">Cantidad:</label>
+              <input id="itemCantidad" type="number" min="1" value="1" placeholder="Cant." style="width:100%;font-size:1.1rem;text-align:center;padding:6px;" aria-label="Cantidad de producto" />
+            </div>
+            
+            <button type="button" id="btnAnadirItem" class="btn-add-to-order" aria-label="Añadir producto al pedido">
+              ➕ Agregar al Pedido
             </button>
           </div>
           
