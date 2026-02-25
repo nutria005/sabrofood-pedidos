@@ -878,7 +878,7 @@ body {
 }
 
 .cliente-grande {
-  font-size: 0.9375rem; /* Restaurado de 0.875rem - 15px */
+  font-size: 1rem; /* Aumentado de 0.9375rem - 16px */
   font-weight: 600;
   color: #111827;
   line-height: 1.2;
@@ -895,7 +895,7 @@ body {
 }
 
 .telefono-grande {
-  font-size: 0.875rem; /* Restaurado de 0.8125rem - 14px */
+  font-size: 0.9375rem; /* Aumentado de 0.875rem - 15px */
   font-weight: 500;
   color: #2563eb;
   background: #eff6ff;
@@ -915,7 +915,7 @@ body {
 }
 
 .direccion-completa {
-  font-size: 0.8125rem; /* Restaurado de 0.75rem - 13px */
+  font-size: 0.875rem; /* Aumentado de 0.8125rem - 14px */
   font-weight: 500;
   color: #374151;
   line-height: 1.3;
@@ -932,7 +932,7 @@ body {
 
 /* FILA 5: Productos */
 .fila-productos {
-  font-size: 0.8125rem; /* Restaurado de 0.75rem - 13px */
+  font-size: 0.875rem; /* Aumentado de 0.8125rem - 14px */
   color: #059669;
   font-weight: 500;
   background: #ecfdf5;
@@ -945,7 +945,7 @@ body {
 
 /* Notas compactas */
 .nota-compacta {
-  font-size: 0.6875rem; /* Restaurado de 0.625rem - 11px */
+  font-size: 0.75rem; /* Aumentado de 0.6875rem - 12px */
   color: #d97706;
   font-weight: 600;
   padding: 3px 6px; /* Reducido de 4px 8px */
@@ -958,13 +958,13 @@ body {
 /* Estilos legacy (mantener compatibilidad con otras partes) */
 /* Estilos legacy (mantener compatibilidad) - Legibilidad mejorada */
 .line{display:flex;align-items:center;gap:3px;line-height:1.2;margin-top:3px}
-.client-name{font-size:0.9375rem;font-weight:600;color:#111827;margin-bottom:2px;}
-.client-address{font-size:0.8125rem;font-weight:500;color:#374151;background:#fef3c7;padding:2px 5px;border-radius:4px;border-left:2px solid #f59e0b;}
-.client-phone{font-size:0.875rem;color:#2563eb;font-weight:500;background:#eff6ff;padding:2px 5px;border-radius:4px;}
-.product-name{font-size:0.8125rem;color:#059669;font-weight:500;background:#ecfdf5;padding:2px 5px;border-radius:4px;}
+.client-name{font-size:1rem;font-weight:600;color:#111827;margin-bottom:2px;}
+.client-address{font-size:0.875rem;font-weight:500;color:#374151;background:#fef3c7;padding:2px 5px;border-radius:4px;border-left:2px solid #f59e0b;}
+.client-phone{font-size:0.9375rem;color:#2563eb;font-weight:500;background:#eff6ff;padding:2px 5px;border-radius:4px;}
+.product-name{font-size:0.875rem;color:#059669;font-weight:500;background:#ecfdf5;padding:2px 5px;border-radius:4px;}
 
 .price-tag{
-  font-size:0.9375rem; 
+  font-size:1rem; 
   font-weight:600; 
   color:#1f2937;
   background:#f3f4f6;
@@ -974,7 +974,7 @@ body {
   display:inline-block;
   margin-top:0;
 }
-.note{font-size:0.8125rem;color:#6b7280}
+.note{font-size:0.875rem;color:#6b7280}
 
 /* Notas importantes para el repartidor */
 .nota-importante {
@@ -988,12 +988,12 @@ body {
 
 .nota-importante .icon {
   color: #d97706;
-  font-size: 0.8125rem; /* Restaurado de 0.75rem */
+  font-size: 0.875rem; /* Aumentado de 0.8125rem */
   opacity: 1;
 }
 
 .note-destacada {
-  font-size: 0.8125rem; /* Restaurado de 0.75rem */
+  font-size: 0.875rem; /* Aumentado de 0.8125rem */
   color: #92400e;
   font-weight: 600;
   line-height: 1.2;
@@ -1014,7 +1014,7 @@ body {
 }
 
 .cambio-texto {
-  font-size: 0.8125rem; /* Restaurado de 0.75rem */
+  font-size: 0.875rem; /* Aumentado de 0.8125rem */
   color: #2563eb;
   font-weight: 600;
   text-decoration: none !important;

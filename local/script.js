@@ -3950,14 +3950,14 @@ function render(datosParaRenderizar){
           ${badgeNuevo}${badgeRepartidor}
           <!-- Línea 1: Monto + Nombre en horizontal -->
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-            <span class="price-tag" style="font-size:0.9375rem;padding:2px 6px;">${cobrarLabel}</span>
-            <span class="client-name" style="font-size:0.9375rem;font-weight:600;flex:1;min-width:0;">${d.nombre || '(sin nombre)'}</span>
+            <span class="price-tag" style="font-size:1rem;padding:2px 6px;">${cobrarLabel}</span>
+            <span class="client-name" style="font-size:1rem;font-weight:600;flex:1;min-width:0;">${d.nombre || '(sin nombre)'}</span>
           </div>
           <!-- Línea 2: Teléfono + WhatsApp compacto -->
           ${d.telefono ? `
             <div style="display:flex;align-items:center;gap:4px;">
-              <span style="font-size:0.875rem;">📞</span>
-              <span class="client-phone" data-telefono="${d.telefono}" data-action="call" style="cursor:pointer;font-size:0.875rem;padding:2px 5px;">${d.telefono}</span>
+              <span style="font-size:0.9375rem;">📞</span>
+              <span class="client-phone" data-telefono="${d.telefono}" data-action="call" style="cursor:pointer;font-size:0.9375rem;padding:2px 5px;">${d.telefono}</span>
               <a href="https://wa.me/56${d.telefono.replace(/\D/g, '')}?text=Hola%20👋,%20somos%20Sabrofood%20🐶🐱%0AQueremos%20avisarte%20que%20tu%20pedido%20ya%20está%20listo%20y%20estamos%20próximos%20a%20realizar%20la%20entrega%20🚚%0A¿Te%20encuentras%20disponible%20para%20recibirlo?%0A¡Quedamos%20atentos!" 
                  target="_blank" 
                  style="display:inline-flex;align-items:center;justify-content:center;background:#25d366;color:white;padding:3px;border-radius:50%;text-decoration:none;width:20px;height:20px;"
@@ -3969,11 +3969,11 @@ function render(datosParaRenderizar){
             </div>
           ` : ''}
           <!-- Línea 3: Dirección compacta -->
-          ${d.direccion ? `<div style="display:flex;align-items:center;gap:3px;" data-direccion="${d.direccion}" data-action="navigation"><span style="font-size:0.8125rem;">📍</span><span class="client-address" style="font-size:0.8125rem;padding:2px 5px;flex:1;min-width:0;">${d.direccion}</span></div>` : ''}
+          ${d.direccion ? `<div style="display:flex;align-items:center;gap:3px;" data-direccion="${d.direccion}" data-action="navigation"><span style="font-size:0.875rem;">📍</span><span class="client-address" style="font-size:0.875rem;padding:2px 5px;flex:1;min-width:0;">${d.direccion}</span></div>` : ''}
           <!-- Línea 4: Productos compacto -->
-          ${resumenTexto !== 'Sin productos' ? `<div style="display:flex;align-items:center;gap:3px;"><span style="font-size:0.8125rem;">🛒</span><span class="product-name" style="font-size:0.8125rem;padding:2px 5px;flex:1;min-width:0;">${resumenTexto}</span></div>` : ''}
+          ${resumenTexto !== 'Sin productos' ? `<div style="display:flex;align-items:center;gap:3px;"><span style="font-size:0.875rem;">🛒</span><span class="product-name" style="font-size:0.875rem;padding:2px 5px;flex:1;min-width:0;">${resumenTexto}</span></div>` : ''}
           
-          ${mensajeCambio ? `<div class="cambio-metodo-pago"><span class="cambio-texto" style="font-size:0.8125rem;">${mensajeCambio}</span></div>` : ''}
+          ${mensajeCambio ? `<div class="cambio-metodo-pago"><span class="cambio-texto" style="font-size:0.875rem;">${mensajeCambio}</span></div>` : ''}
         
         ${notasRegulares ? `
           <div class="nota-importante" style="background: #fee2e2; border-left: 4px solid #dc2626;">
