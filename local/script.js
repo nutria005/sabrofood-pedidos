@@ -6474,6 +6474,221 @@ function limpiarFiltrosHistorial() {
   cargarHistorialCompleto();
 }
 
+// ========================================
+// MODAL: DETALLES DE MÉTODO DE PAGO
+// ========================================
+
+/**
+ * Mostrar modal con pedidos filtrados por método de pago
+ * @param {string} tipo - 'efectivo', 'tarjetas', 'pendientes', 'pagadas'
+ */
+function mostrarPedidosPorMetodo(tipo) {
+  const modal = document.getElementById('modalMetodoPago');
+  const icono = document.getElementById('modalMetodoPagoIcono');
+  const nombre = document.getElementById('modalMetodoPagoNombre');
+  const totalEl = document.getElementById('modalMetodoPagoTotal');
+  const cantidadEl = document.getElementById('modalMetodoPagoCantidad');
+  const lista = document.getElementById('modalMetodoPagoLista');
+  
+  // Configurar título y estilo según tipo
+  const config = {
+    efectivo: {
+      icono: '💵',
+      nombre: 'Efectivo',
+      metodos: ['E']
+    },
+    tarjetas: {
+      icono: '💳',
+      nombre: 'Tarjetas (Débito/Crédito)',
+      metodos: ['DC', 'D', 'C']
+    },
+    pendientes: {
+      icono: '⏳',
+      nombre: 'Transferencias Pendientes',
+      metodos: ['TP', 'T']
+    },
+    pagadas: {
+      icono: '✅',
+      nombre: 'Transferencias Pagadas',
+      metodos: ['TG', 'P']
+    }
+  };
+  
+  const cfg = config[tipo];
+  if (!cfg) return;
+  
+  icono.textContent = cfg.icono;
+  nombre.textContent = cfg.nombre;
+  
+  // Filtrar pedidos entregados, no anulados y con el método de pago correcto
+  const pedidosFiltrados = datosLocal.filter(pedido => {
+    if (!pedido.entregado || pedido.estado === 'ANULADO') return false;
+    
+    const metodo = pedido.metodo_pago || 'E';
+    
+    // Caso especial: Pago Mixto
+    if (metodo === 'PM' || metodo === 'PMP') {
+      const notas = pedido.notas || '';
+      
+      // Si buscamos efectivo, incluir pagos mixtos (tienen efectivo)
+      if (tipo === 'efectivo') return true;
+      
+      // Si buscamos pendientes, incluir PM (tienen transferencia pendiente)
+      if (tipo === 'pendientes' && metodo === 'PM') return true;
+      
+      // Si buscamos pagadas, incluir PMP (tienen transferencia pagada)
+      if (tipo === 'pagadas' && metodo === 'PMP') return true;
+      
+      return false;
+    }
+    
+    // Compatibilidad con pagos mixtos antiguos (con emojis)
+    if (notas.includes('💰 PAGO MIXTO:') || notas.includes('PAGO MIXTO:')) {
+      if (tipo === 'efectivo' && notas.includes('💵 Efectivo:')) return true;
+      if (tipo === 'tarjetas' && notas.includes('💳 Tarjeta:')) return true;
+      if (tipo === 'pendientes' && notas.includes('🔄 Transferencia:')) return true;
+      if (tipo === 'pagadas' && notas.includes('✅ Transferencia PAGADA:')) return true;
+      return false;
+    }
+    
+    // Pagos simples
+    return cfg.metodos.includes(metodo);
+  });
+  
+  // Calcular totales
+  let totalMonto = 0;
+  pedidosFiltrados.forEach(pedido => {
+    const metodo = pedido.metodo_pago || 'E';
+    const total = parseInt(pedido.total) || 0;
+    const notas = pedido.notas || '';
+    
+    // Pago Mixto: calcular solo la parte correspondiente
+    if (metodo === 'PM' || metodo === 'PMP') {
+      const patronNumero = /(\d+[\.,]?\d*)\s*(?:efectivo|efec|pesos|$)/i;
+      const match = notas.match(patronNumero);
+      
+      if (match) {
+        const montoEfectivo = parseInt(match[1].replace(/[,\.]/g, '')) || 0;
+        const montoTransferencia = total - montoEfectivo;
+        
+        if (tipo === 'efectivo') {
+          totalMonto += montoEfectivo;
+        } else if ((tipo === 'pendientes' && metodo === 'PM') || (tipo === 'pagadas' && metodo === 'PMP')) {
+          totalMonto += montoTransferencia;
+        }
+      } else {
+        // Sin monto especificado, asumir todo transferencia
+        if (tipo === 'pendientes' && metodo === 'PM') totalMonto += total;
+        if (tipo === 'pagadas' && metodo === 'PMP') totalMonto += total;
+      }
+    }
+    // Pagos mixtos antiguos
+    else if (notas.includes('💰 PAGO MIXTO:') || notas.includes('PAGO MIXTO:')) {
+      if (tipo === 'efectivo') {
+        const efectivoMatch = notas.match(/💵 Efectivo: \$?([\d,.]+)/);
+        if (efectivoMatch) totalMonto += parseInt(efectivoMatch[1].replace(/[,\.]/g, '')) || 0;
+      } else if (tipo === 'tarjetas') {
+        const tarjetaMatch = notas.match(/💳 Tarjeta: \$?([\d,.]+)/);
+        if (tarjetaMatch) totalMonto += parseInt(tarjetaMatch[1].replace(/[,\.]/g, '')) || 0;
+      } else if (tipo === 'pendientes') {
+        const transferenciaMatch = notas.match(/🔄 Transferencia: \$?([\d,.]+)/);
+        if (transferenciaMatch) totalMonto += parseInt(transferenciaMatch[1].replace(/[,\.]/g, '')) || 0;
+      } else if (tipo === 'pagadas') {
+        const transferenciaPagadaMatch = notas.match(/✅ Transferencia PAGADA: \$?([\d,.]+)/);
+        if (transferenciaPagadaMatch) totalMonto += parseInt(transferenciaPagadaMatch[1].replace(/[,\.]/g, '')) || 0;
+      }
+    }
+    // Pagos simples
+    else {
+      totalMonto += total;
+    }
+  });
+  
+  // Actualizar stats
+  totalEl.textContent = `$${totalMonto.toLocaleString('es-CL')}`;
+  cantidadEl.textContent = `${pedidosFiltrados.length} pedido${pedidosFiltrados.length !== 1 ? 's' : ''}`;
+  
+  // Generar lista HTML
+  if (pedidosFiltrados.length === 0) {
+    lista.innerHTML = '<div style="text-align:center;padding:32px;color:#9ca3af;font-size:0.875rem;">No hay pedidos con este método de pago</div>';
+  } else {
+    let listaHTML = '';
+    
+    pedidosFiltrados.forEach(pedido => {
+      const total = parseInt(pedido.total) || 0;
+      const metodo = pedido.metodo_pago || 'E';
+      const notas = pedido.notas || '';
+      const nombre = pedido.nombre || 'Sin nombre';
+      const telefono = pedido.telefono || '';
+      const direccion = pedido.direccion || 'Sin dirección';
+      
+      // Calcular monto específico para este método
+      let montoMostrar = total;
+      let etiquetaExtra = '';
+      
+      if (metodo === 'PM' || metodo === 'PMP') {
+        const patronNumero = /(\d+[\.,]?\d*)\s*(?:efectivo|efec|pesos|$)/i;
+        const match = notas.match(patronNumero);
+        
+        if (match) {
+          const montoEfectivo = parseInt(match[1].replace(/[,\.]/g, '')) || 0;
+          const montoTransferencia = total - montoEfectivo;
+          
+          if (tipo === 'efectivo') {
+            montoMostrar = montoEfectivo;
+            etiquetaExtra = ` <span style="font-size:0.75rem;color:#6b7280;">(Mixto: $${total.toLocaleString('es-CL')})</span>`;
+          } else {
+            montoMostrar = montoTransferencia;
+            etiquetaExtra = ` <span style="font-size:0.75rem;color:#6b7280;">(Mixto: $${total.toLocaleString('es-CL')})</span>`;
+          }
+        }
+      }
+      
+      // Productos resumidos
+      const productos = Array.isArray(pedido.items) && pedido.items.length > 0
+        ? pedido.items.map(item => `${item.cantidad}× ${item.nombre}`).join(', ')
+        : 'Sin productos';
+      
+      const productosCorto = productos.length > 60 ? productos.substring(0, 60) + '...' : productos;
+      
+      listaHTML += `
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:10px;transition:all 0.2s;" onmouseover="this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow='none'">
+          <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px;">
+            <div style="flex:1;">
+              <div style="font-weight:600;font-size:0.9375rem;color:#111827;margin-bottom:2px;">${nombre}</div>
+              ${telefono ? `<div style="font-size:0.8125rem;color:#2563eb;display:flex;align-items:center;gap:4px;"><span>📞</span>${telefono}</div>` : ''}
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:1.125rem;font-weight:700;color:#059669;">$${montoMostrar.toLocaleString('es-CL')}${etiquetaExtra}</div>
+            </div>
+          </div>
+          <div style="font-size:0.8125rem;color:#374151;background:#fef3c7;padding:4px 6px;border-radius:4px;border-left:2px solid #f59e0b;margin-bottom:4px;">
+            📍 ${direccion}
+          </div>
+          <div style="font-size:0.8125rem;color:#059669;background:#ecfdf5;padding:4px 6px;border-radius:4px;">
+            🛒 ${productosCorto}
+          </div>
+        </div>
+      `;
+    });
+    
+    lista.innerHTML = listaHTML;
+  }
+  
+  // Mostrar modal
+  modal.style.display = 'flex';
+}
+
+/**
+ * Cerrar modal de método de pago
+ */
+function cerrarModalMetodoPago() {
+  const modal = document.getElementById('modalMetodoPago');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+}
+
 // Event Listeners para Historial Completo
 document.addEventListener('DOMContentLoaded', () => {
   // Botón abrir historial
@@ -6518,6 +6733,45 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {
         cerrarHistorialCompleto();
+      }
+    });
+  }
+  
+  // Event Listeners para Tarjetas de Métodos de Pago
+  // Efectivo
+  const cardEfectivo = document.querySelector('.resumen-mini.efectivo');
+  if (cardEfectivo) {
+    cardEfectivo.style.cursor = 'pointer';
+    cardEfectivo.addEventListener('click', () => mostrarPedidosPorMetodo('efectivo'));
+  }
+  
+  // Tarjetas
+  const cardTarjetas = document.querySelector('.resumen-mini.tarjetas');
+  if (cardTarjetas) {
+    cardTarjetas.style.cursor = 'pointer';
+    cardTarjetas.addEventListener('click', () => mostrarPedidosPorMetodo('tarjetas'));
+  }
+  
+  // Transferencias Pendientes
+  const cardTransferencias = document.querySelector('.resumen-mini.transferencias');
+  if (cardTransferencias) {
+    cardTransferencias.style.cursor = 'pointer';
+    cardTransferencias.addEventListener('click', () => mostrarPedidosPorMetodo('pendientes'));
+  }
+  
+  // Transferencias Pagadas
+  const cardPagados = document.querySelector('.resumen-mini.pagados');
+  if (cardPagados) {
+    cardPagados.style.cursor = 'pointer';
+    cardPagados.addEventListener('click', () => mostrarPedidosPorMetodo('pagadas'));
+  }
+  
+  // Cerrar modal de método de pago al hacer clic fuera
+  const modalMetodoPago = document.getElementById('modalMetodoPago');
+  if (modalMetodoPago) {
+    modalMetodoPago.addEventListener('click', (e) => {
+      if (e.target === modalMetodoPago) {
+        cerrarModalMetodoPago();
       }
     });
   }

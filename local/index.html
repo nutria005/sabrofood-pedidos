@@ -541,6 +541,34 @@
     </div>
   </div>
 
+  <!-- Modal: Detalles de Métodos de Pago -->
+  <div id="modalMetodoPago" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:800px;">
+      <div class="modal-header">
+        <h3 id="modalMetodoPagoTitulo" style="margin:0;display:flex;align-items:center;gap:8px;">
+          <span id="modalMetodoPagoIcono">💵</span>
+          <span id="modalMetodoPagoNombre">Efectivo</span>
+        </h3>
+        <button class="btn-cerrar-modal" onclick="cerrarModalMetodoPago()" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="modalMetodoPagoStats" style="background:#f9fafb;padding:12px;border-radius:6px;margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:0.875rem;color:#6b7280;">Total:</span>
+            <span id="modalMetodoPagoTotal" style="font-size:1.25rem;font-weight:700;color:#111827;">$0</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+            <span style="font-size:0.875rem;color:#6b7280;">Cantidad:</span>
+            <span id="modalMetodoPagoCantidad" style="font-size:1rem;font-weight:600;color:#374151;">0 pedidos</span>
+          </div>
+        </div>
+        <div id="modalMetodoPagoLista" style="display:flex;flex-direction:column;gap:8px;max-height:450px;overflow-y:auto;">
+          <!-- Lista de pedidos se genera dinámicamente -->
+        </div>
+      </div>
+    </div>
+  </div>
+
   <style>
     .sr-only {
       position: absolute;
