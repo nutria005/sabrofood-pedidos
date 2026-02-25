@@ -3932,9 +3932,9 @@ function render(datosParaRenderizar){
     // Badge de REPARTIDOR ASIGNADO
     let badgeRepartidor = '';
     if (d.asignado_a === 'repartidor_1') {
-      badgeRepartidor = '<span style="display:inline-block;background:#3b82f6;color:white;padding:2px 6px;border-radius:4px;font-size:0.625rem;font-weight:700;margin-left:6px;">🚚 Rep 1</span>';
+      badgeRepartidor = '<span style="display:inline-block;background:#3b82f6;color:white;padding:1px 4px;border-radius:3px;font-size:0.5rem;font-weight:700;margin-left:4px;">🚚 R1</span>';
     } else if (d.asignado_a === 'repartidor_2') {
-      badgeRepartidor = '<span style="display:inline-block;background:#10b981;color:white;padding:2px 6px;border-radius:4px;font-size:0.625rem;font-weight:700;margin-left:6px;">🚚 Rep 2</span>';
+      badgeRepartidor = '<span style="display:inline-block;background:#10b981;color:white;padding:1px 4px;border-radius:3px;font-size:0.5rem;font-weight:700;margin-left:4px;">🚚 R2</span>';
     }
     
     // Extraer monto del cobrarLabel
@@ -3948,28 +3948,32 @@ function render(datosParaRenderizar){
       <div class="card-row">
         <div class="card-left">
           ${badgeNuevo}${badgeRepartidor}
-          <div class="line">
-            <span class="price-tag">${cobrarLabel}</span>
+          <!-- Línea 1: Monto + Nombre en horizontal -->
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="price-tag" style="font-size:0.875rem;padding:2px 6px;">${cobrarLabel}</span>
+            <span class="client-name" style="font-size:0.875rem;font-weight:600;flex:1;min-width:0;">${d.nombre || '(sin nombre)'}</span>
           </div>
-          <div class="client-name">${d.nombre || '(sin nombre)'}</div>
+          <!-- Línea 2: Teléfono + WhatsApp compacto -->
           ${d.telefono ? `
-            <div class="line" style="display:flex;align-items:center;gap:8px;">
-              <span class="icon" data-telefono="${d.telefono}" data-action="call" style="cursor:pointer;">📞</span>
-              <span class="client-phone" data-telefono="${d.telefono}" data-action="call" style="cursor:pointer;">${d.telefono}</span>
+            <div style="display:flex;align-items:center;gap:4px;">
+              <span style="font-size:0.75rem;">📞</span>
+              <span class="client-phone" data-telefono="${d.telefono}" data-action="call" style="cursor:pointer;font-size:0.75rem;padding:2px 5px;">${d.telefono}</span>
               <a href="https://wa.me/56${d.telefono.replace(/\D/g, '')}?text=Hola%20👋,%20somos%20Sabrofood%20🐶🐱%0AQueremos%20avisarte%20que%20tu%20pedido%20ya%20está%20listo%20y%20estamos%20próximos%20a%20realizar%20la%20entrega%20🚚%0A¿Te%20encuentras%20disponible%20para%20recibirlo?%0A¡Quedamos%20atentos!" 
                  target="_blank" 
-                 style="display:inline-flex;align-items:center;justify-content:center;background:#25d366;color:white;padding:6px;border-radius:50%;text-decoration:none;width:32px;height:32px;margin-left:4px;"
-                 title="Enviar WhatsApp">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                 style="display:inline-flex;align-items:center;justify-content:center;background:#25d366;color:white;padding:3px;border-radius:50%;text-decoration:none;width:20px;height:20px;"
+                 title="WhatsApp">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
                   <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
                 </svg>
               </a>
             </div>
           ` : ''}
-          ${d.direccion ? `<div class="line" data-direccion="${d.direccion}" data-action="navigation"><span class="icon">📍</span><span class="client-address">${d.direccion}</span></div>` : ''}
-          ${resumenTexto !== 'Sin productos' ? `<div class="line"><span class="icon">🛒</span><span class="product-name">${resumenTexto}</span></div>` : ''}
+          <!-- Línea 3: Dirección compacta -->
+          ${d.direccion ? `<div style="display:flex;align-items:center;gap:3px;" data-direccion="${d.direccion}" data-action="navigation"><span style="font-size:0.75rem;">📍</span><span class="client-address" style="font-size:0.75rem;padding:2px 5px;flex:1;min-width:0;">${d.direccion}</span></div>` : ''}
+          <!-- Línea 4: Productos compacto -->
+          ${resumenTexto !== 'Sin productos' ? `<div style="display:flex;align-items:center;gap:3px;"><span style="font-size:0.75rem;">🛒</span><span class="product-name" style="font-size:0.75rem;padding:2px 5px;flex:1;min-width:0;">${resumenTexto}</span></div>` : ''}
           
-          ${mensajeCambio ? `<div class="cambio-metodo-pago"><span class="cambio-texto">${mensajeCambio}</span></div>` : ''}
+          ${mensajeCambio ? `<div class="cambio-metodo-pago"><span class="cambio-texto" style="font-size:0.75rem;">${mensajeCambio}</span></div>` : ''}
         
         ${notasRegulares ? `
           <div class="nota-importante" style="background: #fee2e2; border-left: 4px solid #dc2626;">
