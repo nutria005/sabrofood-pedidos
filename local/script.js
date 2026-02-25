@@ -6478,11 +6478,69 @@ function limpiarFiltrosHistorial() {
 // MODAL: DETALLES DE MÉTODO DE PAGO
 // ========================================
 
+// Variables globales para el modal
+let modalMetodoPagoTipo = 'efectivo';
+let modalMetodoPagoFiltro = 'hoy';
+
+/**
+ * Filtrar pedidos del modal por período de tiempo
+ * @param {string} filtro - 'hoy', 'semana', 'mes', 'todo'
+ */
+function filtrarPedidosModal(filtro) {
+  modalMetodoPagoFiltro = filtro;
+  
+  // Actualizar botones activos
+  document.querySelectorAll('.btn-filtro-modal').forEach(btn => {
+    btn.classList.remove('active');
+    if (btn.getAttribute('data-filtro') === filtro) {
+      btn.classList.add('active');
+    }
+  });
+  
+  // Recargar pedidos con nuevo filtro
+  mostrarPedidosPorMetodo(modalMetodoPagoTipo);
+}
+
+/**
+ * Obtener rango de fechas según filtro
+ * @param {string} filtro - 'hoy', 'semana', 'mes', 'todo'
+ * @returns {Object} {desde, hasta}
+ */
+function obtenerRangoFechas(filtro) {
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  
+  const manana = new Date(hoy);
+  manana.setDate(manana.getDate() + 1);
+  
+  switch(filtro) {
+    case 'hoy':
+      return { desde: hoy, hasta: manana };
+      
+    case 'semana':
+      const inicioSemana = new Date(hoy);
+      inicioSemana.setDate(hoy.getDate() - hoy.getDay()); // Domingo
+      const finSemana = new Date(inicioSemana);
+      finSemana.setDate(inicioSemana.getDate() + 7);
+      return { desde: inicioSemana, hasta: finSemana };
+      
+    case 'mes':
+      const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+      const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1);
+      return { desde: inicioMes, hasta: finMes };
+      
+    case 'todo':
+    default:
+      return { desde: new Date(0), hasta: new Date('2099-12-31') };
+  }
+}
+
 /**
  * Mostrar modal con pedidos filtrados por método de pago
  * @param {string} tipo - 'efectivo', 'tarjetas', 'pendientes', 'pagadas'
  */
 function mostrarPedidosPorMetodo(tipo) {
+  modalMetodoPagoTipo = tipo; // Guardar tipo actual
   const modal = document.getElementById('modalMetodoPago');
   const icono = document.getElementById('modalMetodoPagoIcono');
   const nombre = document.getElementById('modalMetodoPagoNombre');
@@ -6520,9 +6578,16 @@ function mostrarPedidosPorMetodo(tipo) {
   icono.textContent = cfg.icono;
   nombre.textContent = cfg.nombre;
   
+  // Obtener rango de fechas según filtro
+  const { desde, hasta } = obtenerRangoFechas(modalMetodoPagoFiltro);
+  
   // Filtrar pedidos entregados, no anulados y con el método de pago correcto
   const pedidosFiltrados = datosLocal.filter(pedido => {
     if (!pedido.entregado || pedido.estado === 'ANULADO') return false;
+    
+    // Filtrar por fecha (usar created_at si existe, sino fecha de entrega)
+    const fechaPedido = pedido.created_at ? new Date(pedido.created_at) : new Date(pedido.fecha);
+    if (fechaPedido < desde || fechaPedido >= hasta) return false;
     
     const metodo = pedido.metodo_pago || 'E';
     const notas = pedido.notas || ''; // Definir notas al inicio
@@ -6650,12 +6715,22 @@ function mostrarPedidosPorMetodo(tipo) {
       
       const productosCorto = productos.length > 60 ? productos.substring(0, 60) + '...' : productos;
       
+      // Fecha y hora de creación (usar created_at si existe, sino fecha)
+      let fechaCreacionTexto = '';
+      if (pedido.created_at) {
+        const fechaCreacion = new Date(pedido.created_at);
+        const fechaFormato = fechaCreacion.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const horaFormato = fechaCreacion.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+        fechaCreacionTexto = `🕐 ${fechaFormato} ${horaFormato}`;
+      }
+      
       listaHTML += `
         <div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:10px;transition:all 0.2s;" onmouseover="this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow='none'">
           <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px;">
             <div style="flex:1;">
               <div style="font-weight:600;font-size:0.9375rem;color:#111827;margin-bottom:2px;">${nombre}</div>
               ${telefono ? `<div style="font-size:0.8125rem;color:#2563eb;display:flex;align-items:center;gap:4px;"><span>📞</span>${telefono}</div>` : ''}
+              ${fechaCreacionTexto ? `<div style="font-size:0.75rem;color:#9ca3af;margin-top:2px;">${fechaCreacionTexto}</div>` : ''}
             </div>
             <div style="text-align:right;">
               <div style="font-size:1.125rem;font-weight:700;color:#059669;">$${montoMostrar.toLocaleString('es-CL')}${etiquetaExtra}</div>

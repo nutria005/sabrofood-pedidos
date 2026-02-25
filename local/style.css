@@ -1385,6 +1385,32 @@ color: #374151;
   max-height: calc(90vh - 100px);
 }
 
+/* Botones de filtro del modal */
+.btn-filtro-modal {
+  background: white;
+  border: 2px solid #e5e7eb;
+  color: #6b7280;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-filtro-modal:hover {
+  border-color: #667eea;
+  color: #667eea;
+  background: #f5f7ff;
+}
+
+.btn-filtro-modal.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: transparent;
+}
+
 /* Moderniza los ítems del carrito */
 #lineasPedidoContainer > div {
   background: #f9fafb;

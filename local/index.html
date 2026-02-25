@@ -542,8 +542,8 @@
   </div>
 
   <!-- Modal: Detalles de Métodos de Pago -->
-  <div id="modalMetodoPago" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:800px;">
+  <div id="modalMetodoPago" style="display:none;">
+    <div class="modal-content" style="max-width:900px;">
       <div class="modal-header">
         <h3 id="modalMetodoPagoTitulo" style="margin:0;display:flex;align-items:center;gap:8px;">
           <span id="modalMetodoPagoIcono">💵</span>
@@ -552,6 +552,22 @@
         <button class="btn-cerrar-modal" onclick="cerrarModalMetodoPago()" aria-label="Cerrar">×</button>
       </div>
       <div class="modal-body">
+        <!-- Filtros de fecha -->
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+          <button onclick="filtrarPedidosModal('hoy')" class="btn-filtro-modal active" data-filtro="hoy">
+            📅 Hoy
+          </button>
+          <button onclick="filtrarPedidosModal('semana')" class="btn-filtro-modal" data-filtro="semana">
+            📆 Esta Semana
+          </button>
+          <button onclick="filtrarPedidosModal('mes')" class="btn-filtro-modal" data-filtro="mes">
+            🗓️ Este Mes
+          </button>
+          <button onclick="filtrarPedidosModal('todo')" class="btn-filtro-modal" data-filtro="todo">
+            📋 Todo
+          </button>
+        </div>
+        
         <div id="modalMetodoPagoStats" style="background:#f9fafb;padding:12px;border-radius:6px;margin-bottom:16px;">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <span style="font-size:0.875rem;color:#6b7280;">Total:</span>
