@@ -6525,11 +6525,10 @@ function mostrarPedidosPorMetodo(tipo) {
     if (!pedido.entregado || pedido.estado === 'ANULADO') return false;
     
     const metodo = pedido.metodo_pago || 'E';
+    const notas = pedido.notas || ''; // Definir notas al inicio
     
     // Caso especial: Pago Mixto
     if (metodo === 'PM' || metodo === 'PMP') {
-      const notas = pedido.notas || '';
-      
       // Si buscamos efectivo, incluir pagos mixtos (tienen efectivo)
       if (tipo === 'efectivo') return true;
       
@@ -6543,7 +6542,7 @@ function mostrarPedidosPorMetodo(tipo) {
     }
     
     // Compatibilidad con pagos mixtos antiguos (con emojis)
-    if (notas.includes('💰 PAGO MIXTO:') || notas.includes('PAGO MIXTO:')) {
+    if (typeof notas === 'string' && (notas.includes('💰 PAGO MIXTO:') || notas.includes('PAGO MIXTO:'))) {
       if (tipo === 'efectivo' && notas.includes('💵 Efectivo:')) return true;
       if (tipo === 'tarjetas' && notas.includes('💳 Tarjeta:')) return true;
       if (tipo === 'pendientes' && notas.includes('🔄 Transferencia:')) return true;
@@ -6583,7 +6582,7 @@ function mostrarPedidosPorMetodo(tipo) {
       }
     }
     // Pagos mixtos antiguos
-    else if (notas.includes('💰 PAGO MIXTO:') || notas.includes('PAGO MIXTO:')) {
+    else if (typeof notas === 'string' && (notas.includes('💰 PAGO MIXTO:') || notas.includes('PAGO MIXTO:'))) {
       if (tipo === 'efectivo') {
         const efectivoMatch = notas.match(/💵 Efectivo: \$?([\d,.]+)/);
         if (efectivoMatch) totalMonto += parseInt(efectivoMatch[1].replace(/[,\.]/g, '')) || 0;
