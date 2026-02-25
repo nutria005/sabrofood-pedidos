@@ -3980,18 +3980,17 @@ function render(datosParaRenderizar){
           </div>
         ` : ''}
         </div>
-        
         <div class="ruta-controls">
           <div class="prioridad-section">
-            <label class="prioridad-label" style="font-size: 0.75rem; font-weight: 600; color: #374151;">🚚 Ruta:</label>
+            <label class="prioridad-label" style="font-size: 0.7rem; font-weight: 600; color: #374151;">🚚:</label>
             <select class="prioridad-select" data-doc="${d.id}" style="
               background: ${prioridadInfo.bgColor}; 
               color: ${prioridadInfo.color}; 
               border: 1px solid ${prioridadInfo.color};
               border-radius: 5px;
-              padding: 4px 6px;
+              padding: 4px 5px;
               font-weight: 600;
-              font-size: 0.75rem;
+              font-size: 0.7rem;
             ">
               <option value="A" ${prioridad === 'A' ? 'selected' : ''}>🔴 A - Alta</option>
               <option value="B" ${prioridad === 'B' ? 'selected' : ''}>🟡 B - Media</option>
@@ -3999,7 +3998,7 @@ function render(datosParaRenderizar){
             </select>
           </div>
           <div class="prioridad-numerica">
-            <label for="orden-${d.id}" style="font-size: 0.75rem; color: #666; margin-bottom: 3px; display: block; font-weight: 600;">🔢 Orden:</label>
+            <label for="orden-${d.id}" style="font-size: 0.7rem; color: #666; margin-bottom: 2px; display: block; font-weight: 600;">🔢:</label>
             <input 
               type="number" 
               id="orden-${d.id}"
@@ -4011,14 +4010,14 @@ function render(datosParaRenderizar){
               placeholder="#"
               title="Orden de entrega (1, 2, 3...)"
               style="
-                width: 60px;
-                height: 32px;
-                padding: 6px 8px;
+                width: 50px;
+                height: 30px;
+                padding: 4px 6px;
                 border: 1px solid #ddd;
                 -webkit-appearance: none;
                 -moz-appearance: textfield;
-                border-radius: 6px;
-                font-size: 0.875rem;
+                border-radius: 5px;
+                font-size: 0.8125rem;
                 font-weight: 600;
                 text-align: center;
                 background: #fff;

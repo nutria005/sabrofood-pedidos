@@ -613,13 +613,21 @@ body {
 .ruta-controls {
   display: flex;
   flex-direction: column;
-  gap: 8px; /* Reducido de 12px */
-  padding: 10px; /* Reducido de 16px */
-  border-left: 2px solid #e5e7eb; /* Reducido de 3px */
+  gap: 5px; /* Reducido de 6px */
+  padding: 6px; /* Reducido de 8px */
+  border-left: 2px solid #e5e7eb;
   background: #f9fafb;
-  border-radius: 0 6px 6px 0; /* Reducido de 8px */
-  min-width: 140px; /* Reducido de 180px */
-  border: 1px solid #e5e7eb; /* Reducido de 2px */
+  border-radius: 6px;
+  min-width: auto;
+  border: 1px solid #e5e7eb;
+  width: 100%;
+}
+
+@media (min-width: 1200px) {
+  .ruta-controls {
+    width: auto;
+    border-radius: 0 6px 6px 0;
+  }
 }
 
 .prioridad-section {
@@ -639,11 +647,11 @@ body {
 
 .prioridad-select {
   font-family: inherit;
-  font-size: 0.8125rem; /* Reducido de 14px a 13px */
+  font-size: 0.75rem; /* Reducido más para pantalla dividida */
   font-weight: 600;
-  border-radius: 6px; /* Reducido de 8px */
-  padding: 6px 8px; /* Reducido de 10px 12px */
-  border: 1px solid; /* Reducido de 2px */
+  border-radius: 5px;
+  padding: 5px 6px;
+  border: 1px solid;
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -686,16 +694,16 @@ body {
 .card-row {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
-/* Desktop */
-@media (min-width: 768px) {
+/* Pantallas grandes (más de 1200px) - Layout horizontal */
+@media (min-width: 1200px) {
   .card-row {
     flex-direction: row;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 16px;
+    gap: 10px;
   }
   
   .card-left {
@@ -705,11 +713,11 @@ body {
   }
   
   .ruta-controls {
-    flex: 0 0 200px;
+    flex: 0 0 120px;
   }
   
   .acciones-repartidor {
-    flex: 0 0 180px;
+    flex: 0 0 140px;
   }
 }
 
@@ -745,10 +753,10 @@ body {
   position: relative;
   background: #fff;
   border: 1px solid #e5e7eb;
-  border-left: 4px solid #10b981;
-  border-radius: 10px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-  margin-bottom: 12px;
+  border-left: 3px solid #10b981; /* Reducido de 4px */
+  border-radius: 8px; /* Reducido de 10px */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); /* Reducido */
+  margin-bottom: 8px; /* Reducido de 12px */
   overflow: visible;
   /* Swipe support */
   touch-action: pan-y;
@@ -805,17 +813,17 @@ body {
   flex: 0 0 70%;
   display: flex;
   flex-direction: column;
-  gap: 6px; /* Reducido de var(--t-gap) * 0.4 */
-  padding: 8px; /* Reducido de var(--t-padding) * 0.6 */
-  padding-top: 16px; /* Reducido de 32px para el badge NUEVO */
+  gap: 5px; /* Reducido de 6px para más compacto */
+  padding: 6px; /* Reducido de 8px */
+  padding-top: 14px; /* Reducido de 16px para el badge NUEVO */
 }
 
 /* Diseño compacto */
 .card-content-horizontal {
-  padding: 8px; /* Reducido de 14px */
+  padding: 6px; /* Reducido de 8px */
   display: flex;
   flex-direction: column;
-  gap: 6px; /* Reducido de 10px */
+  gap: 5px; /* Reducido de 6px */
 }
 
 /* FILA 1: Monto + Estado */
@@ -2714,13 +2722,20 @@ header {
 .acciones-repartidor {
   display: flex;
   flex-direction: column;
-  gap: 6px; /* Reducido de 10px */
-  margin: 10px 0 8px 0; /* Reducido de 16px 0 12px 0 */
-  padding: 10px; /* Reducido de 16px */
+  gap: 4px; /* Reducido de 5px */
+  margin: 0;
+  padding: 6px; /* Reducido de 8px */
   background: #fafafa;
-  border-radius: 6px; /* Reducido de 8px */
+  border-radius: 6px;
   border: 1px solid #e5e7eb;
   position: relative;
+  width: 100%;
+}
+
+@media (min-width: 1200px) {
+  .acciones-repartidor {
+    width: auto;
+  }
 }
 
 .btn-entregado-principal {
