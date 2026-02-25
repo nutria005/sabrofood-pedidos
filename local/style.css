@@ -613,8 +613,8 @@ body {
 .ruta-controls {
   display: flex;
   flex-direction: column;
-  gap: 5px; /* Reducido de 6px */
-  padding: 6px; /* Reducido de 8px */
+  gap: 4px; /* Reducido de 5px */
+  padding: 5px; /* Reducido de 6px */
   border-left: 2px solid #e5e7eb;
   background: #f9fafb;
   border-radius: 6px;
@@ -697,27 +697,27 @@ body {
   gap: 6px;
 }
 
-/* Pantallas grandes (más de 1200px) - Layout horizontal compacto */
+/* Pantallas grandes (más de 1200px) - Layout horizontal compacto SIN espacios */
 @media (min-width: 1200px) {
   .card-row {
     flex-direction: row;
-    justify-content: space-between;
+    justify-content: flex-start; /* Cambiado de space-between a flex-start */
     align-items: flex-start;
-    gap: 8px; /* Reducido de 10px */
+    gap: 4px; /* Reducido de 8px a 4px */
   }
   
   .card-left {
-    flex: 1 1 auto; /* Cambiado para que use todo el espacio disponible */
+    flex: 0 0 auto; /* Cambiado de flex: 1 1 auto - solo ocupa su contenido */
     min-width: 0;
     margin-bottom: 0;
   }
   
   .ruta-controls {
-    flex: 0 0 90px; /* Reducido de 120px */
+    flex: 0 0 70px; /* Reducido de 90px */
   }
   
   .acciones-repartidor {
-    flex: 0 0 100px; /* Reducido de 140px */
+    flex: 0 0 85px; /* Reducido de 100px */
   }
 }
 
@@ -2722,9 +2722,9 @@ header {
 .acciones-repartidor {
   display: flex;
   flex-direction: column;
-  gap: 4px; /* Reducido de 5px */
+  gap: 3px; /* Reducido de 4px */
   margin: 0;
-  padding: 6px; /* Reducido de 8px */
+  padding: 5px; /* Reducido de 6px */
   background: #fafafa;
   border-radius: 6px;
   border: 1px solid #e5e7eb;
