@@ -3932,9 +3932,9 @@ function render(datosParaRenderizar){
     // Badge de REPARTIDOR ASIGNADO
     let badgeRepartidor = '';
     if (d.asignado_a === 'repartidor_1') {
-      badgeRepartidor = '<span style="display:inline-block;background:#3b82f6;color:white;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;margin-left:8px;">🚚 Repartidor 1</span>';
+      badgeRepartidor = '<span style="display:inline-block;background:#3b82f6;color:white;padding:2px 6px;border-radius:4px;font-size:0.625rem;font-weight:700;margin-left:6px;">🚚 Rep 1</span>';
     } else if (d.asignado_a === 'repartidor_2') {
-      badgeRepartidor = '<span style="display:inline-block;background:#10b981;color:white;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;margin-left:8px;">🚚 Repartidor 2</span>';
+      badgeRepartidor = '<span style="display:inline-block;background:#10b981;color:white;padding:2px 6px;border-radius:4px;font-size:0.625rem;font-weight:700;margin-left:6px;">🚚 Rep 2</span>';
     }
     
     // Extraer monto del cobrarLabel
@@ -3983,15 +3983,15 @@ function render(datosParaRenderizar){
         
         <div class="ruta-controls">
           <div class="prioridad-section">
-            <label class="prioridad-label" style="font-size: 16px; font-weight: 600; color: #374151;">🚚 Ruta:</label>
+            <label class="prioridad-label" style="font-size: 0.75rem; font-weight: 600; color: #374151;">🚚 Ruta:</label>
             <select class="prioridad-select" data-doc="${d.id}" style="
               background: ${prioridadInfo.bgColor}; 
               color: ${prioridadInfo.color}; 
               border: 1px solid ${prioridadInfo.color};
-              border-radius: 6px;
-              padding: 4px 8px;
+              border-radius: 5px;
+              padding: 4px 6px;
               font-weight: 600;
-              font-size: 12px;
+              font-size: 0.75rem;
             ">
               <option value="A" ${prioridad === 'A' ? 'selected' : ''}>🔴 A - Alta</option>
               <option value="B" ${prioridad === 'B' ? 'selected' : ''}>🟡 B - Media</option>
@@ -3999,7 +3999,7 @@ function render(datosParaRenderizar){
             </select>
           </div>
           <div class="prioridad-numerica">
-            <label for="orden-${d.id}" style="font-size: 16px; color: #666; margin-bottom: 6px; display: block; font-weight: 600;">🔢 Orden:</label>
+            <label for="orden-${d.id}" style="font-size: 0.75rem; color: #666; margin-bottom: 3px; display: block; font-weight: 600;">🔢 Orden:</label>
             <input 
               type="number" 
               id="orden-${d.id}"
@@ -4011,18 +4011,18 @@ function render(datosParaRenderizar){
               placeholder="#"
               title="Orden de entrega (1, 2, 3...)"
               style="
-                width: 80px;
-                height: 50px;
-                padding: 12px 10px;
-                border: 2px solid #ddd;
+                width: 60px;
+                height: 32px;
+                padding: 6px 8px;
+                border: 1px solid #ddd;
                 -webkit-appearance: none;
                 -moz-appearance: textfield;
-                border-radius: 8px;
-                font-size: 16px;
+                border-radius: 6px;
+                font-size: 0.875rem;
                 font-weight: 600;
                 text-align: center;
                 background: #fff;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                box-shadow: 0 1px 2px rgba(0,0,0,0.05);
                 transition: all 0.2s ease;
                 -webkit-appearance: none;
                 -moz-appearance: textfield;
