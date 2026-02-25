@@ -5319,7 +5319,19 @@ function generarResumenCarga() {
   // Así, productos iguales de distintos pedidos aparecen juntos visualmente
   const procesarArray = (array) => {
     const itemsOrdenados = array.sort((a, b) => a.nombre.localeCompare(b.nombre));
-    const bultos = itemsOrdenados.reduce((sum, item) => sum + item.cantidad, 0);
+    
+    // CORRECCIÓN: Productos a granel cuentan como 1 bulto, no el precio
+    const bultos = itemsOrdenados.reduce((sum, item) => {
+      const esGranel = item.nombre && (
+        item.nombre.toLowerCase().includes('(granel)') || 
+        item.nombre.toLowerCase().includes('granel')
+      );
+      
+      // Si es granel → 1 bulto (el precio está en "cantidad" pero es 1 bulto físico)
+      // Si NO es granel → usar cantidad normal
+      return sum + (esGranel ? 1 : item.cantidad);
+    }, 0);
+    
     return { items: itemsOrdenados, bultos };
   };
   
