@@ -224,21 +224,16 @@ const OfflineManager = {
    * Actualizar indicador de estado de conexión
    */
   actualizarEstadoConexion() {
-    const indicador = document.getElementById('connectionStatus');
-    const statusIcon = indicador?.querySelector('.status-icon');
-    const statusText = indicador?.querySelector('.status-text');
+    const statusIcon = document.getElementById('statusIcon');
+    const statusText = document.getElementById('statusText');
     
-    if (indicador && statusIcon && statusText) {
+    if (statusIcon && statusText) {
       if (this.estaOnline()) {
-        indicador.className = 'connection-status online';
         statusIcon.textContent = '🟢';
-        statusText.textContent = 'Online';
-        indicador.title = 'Conectado a internet';
+        statusText.textContent = 'Conectado';
       } else {
-        indicador.className = 'connection-status offline';
         statusIcon.textContent = '🔴';
-        statusText.textContent = 'Offline';
-        indicador.title = 'Sin conexión a internet';
+        statusText.textContent = 'Sin conexión';
       }
     }
   }
@@ -1324,14 +1319,20 @@ async function cargarPedidos() {
         return;
       }
       
-      statusEl.innerText = 'Estado: ERROR de Conexión';
+      const statusIcon = document.getElementById('statusIcon');
+      const statusText = document.getElementById('statusText');
+      if (statusText) statusText.textContent = 'Error de conexión';
+      if (statusIcon) statusIcon.textContent = '🔴';
       resultadosEl.innerHTML = '<div class="item">Error al conectar con la base de datos. Verifica tu conexión y permisos en Supabase.</div>';
       return;
     }
     
     // ✅ DATOS FRESCOS DE SUPABASE
     console.log('✅ DATOS FRESCOS RECIBIDOS DE SUPABASE');
-    statusEl.innerText = 'Estado: Conectado a Supabase';
+    const statusIcon = document.getElementById('statusIcon');
+    const statusText = document.getElementById('statusText');
+    if (statusText) statusText.textContent = 'Conectado';
+    if (statusIcon) statusIcon.textContent = '🟢';
     datosLocal = data || [];
     
     // Guardar en cache para uso offline
@@ -5544,53 +5545,11 @@ function cerrarModalCarga() {
 document.addEventListener('DOMContentLoaded', function() {
   // Limpiar localStorage del zoom eliminado
   localStorage.removeItem('app_zoom');
+  localStorage.removeItem('app_density'); // Limpieza de densidad removida
   
   // ========================================
-  // CONTROL DE DENSIDAD
+  // BOTONES MODALES
   // ========================================
-  const densitySlider = document.getElementById('densitySlider');
-  const densityValue = document.getElementById('densityValue');
-  
-  if (densitySlider && densityValue) {
-    // Cargar densidad guardada
-    const savedDensity = localStorage.getItem('app_density') || '1';
-    densitySlider.value = savedDensity;
-    aplicarDensidad(savedDensity);
-    
-    // Listener para cambios en el slider
-    densitySlider.addEventListener('input', function(e) {
-      const factor = parseFloat(e.target.value);
-      aplicarDensidad(factor);
-      localStorage.setItem('app_density', factor);
-    });
-  }
-  
-  function aplicarDensidad(factor) {
-    const f = parseFloat(factor);
-    const root = document.documentElement.style;
-    
-    // Actualizar TODAS las variables CSS dinámicamente
-    root.setProperty('--t-fuente', `${16 * f}px`);
-    root.setProperty('--t-fuente-title', `${18 * f}px`);
-    root.setProperty('--t-fuente-small', `${14 * f}px`);
-    root.setProperty('--t-fuente-tiny', `${12 * f}px`);
-    root.setProperty('--t-padding', `${20 * f}px`);
-    root.setProperty('--t-padding-btn', `${14 * f}px`);
-    root.setProperty('--t-gap', `${12 * f}px`);
-    root.setProperty('--t-gap-small', `${8 * f}px`);
-    root.setProperty('--t-border-radius', `${16 * f}px`);
-    root.setProperty('--t-btn-height', `${45 * f}px`);
-    root.setProperty('--t-line-height', `${1.5 * f}`);
-    
-    // Actualizar display del porcentaje
-    const densityValue = document.getElementById('densityValue');
-    if (densityValue) {
-      densityValue.textContent = Math.round(f * 100) + '%';
-    }
-    
-    console.log(`📐 Densidad aplicada: ${Math.round(f * 100)}%`);
-  }
-  
   const btnVerCarga = document.getElementById('btnVerCarga');
   const btnCerrarCarga = document.getElementById('btnCerrarCarga');
   const modalBackdrop = document.getElementById('modalCarga');

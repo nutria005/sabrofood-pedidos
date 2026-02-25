@@ -21,48 +21,45 @@
 </head>
 <body>
   <div class="wrap">
-    <header style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+    <header style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);padding:16px 20px;border-radius:12px;box-shadow:0 4px 12px rgba(102,126,234,0.2);">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <h1 class="title">🏢 Admin Local</h1>
-        <span style="background:#4b6cb7;color:white;padding:4px 12px;border-radius:6px;font-size:0.75rem;font-weight:600;letter-spacing:0.5px;">MODO: LOCAL</span>
+        <h1 class="title" style="color:white;margin:0;font-size:1.5rem;display:flex;align-items:center;gap:8px;">
+          🏢 Admin Local
+        </h1>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:6px;background:#f3f4f6;padding:4px 10px;border-radius:8px;" title="Ajustar densidad de vista">
-          <span style="font-size:0.85rem;">📐</span>
-          <input type="range" id="densitySlider" min="0.6" max="1.1" step="0.05" value="1" style="width:80px;cursor:pointer;" aria-label="Control de densidad">
-          <span id="densityValue" style="font-size:0.75rem;color:#6b7280;min-width:35px;">100%</span>
+      
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div id="contadorProgreso" style="background:rgba(255,255,255,0.2);backdrop-filter:blur(10px);padding:8px 16px;border-radius:8px;font-size:0.9rem;font-weight:600;color:white;display:flex;gap:6px;align-items:center;border:1px solid rgba(255,255,255,0.3);" title="Entregados / Anulados / Total">
+          <span id="contadorEntregados">✅ 0</span>
+          <span style="opacity:0.6;">/</span>
+          <span id="contadorAnulados">🚫 0</span>
+          <span style="opacity:0.6;">/</span>
+          <span id="contadorTotal">📦 0</span>
         </div>
         
-        <div id="contadorProgreso" style="background:#f3f4f6;padding:6px 12px;border-radius:8px;font-size:0.9rem;font-weight:600;color:#374151;display:flex;gap:4px;align-items:center;" title="Entregados / Anulados / Total">
-          <span id="contadorEntregados" style="color:#059669;">✅ 0</span>
-          <span style="color:#9ca3af;">/</span>
-          <span id="contadorAnulados" style="color:#6b7280;">🚫 0</span>
-          <span style="color:#9ca3af;">/</span>
-          <span id="contadorTotal" style="color:#374151;">📦 0</span>
-        </div>
-        
-        <button id="btnVerCarga" class="btn-ver-carga" aria-label="Ver resumen de carga">
+        <button id="btnVerCarga" class="btn-ver-carga" aria-label="Ver resumen de carga" style="background:rgba(255,255,255,0.95);color:#667eea;font-weight:600;border:none;box-shadow:0 2px 8px rgba(0,0,0,0.15);">
           📦 Ver Carga
         </button>
         
-        <button id="btnHistorialCompleto" class="btn-ver-carga" aria-label="Ver historial completo" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-          📊 Historial Completo
+        <button id="btnHistorialCompleto" class="btn-ver-carga" aria-label="Ver historial completo" style="background:rgba(255,255,255,0.95);color:#764ba2;font-weight:600;border:none;box-shadow:0 2px 8px rgba(0,0,0,0.15);">
+          📊 Historial
         </button>
-        
-        <div id="connectionStatus" class="connection-status online" role="status" aria-live="polite">
-          <span class="status-icon" aria-hidden="true">🟢</span>
-          <span class="status-text">Online</span>
-        </div>
         
         <div id="offlineCounter" class="offline-counter" style="display:none;" role="status" aria-live="polite">
           <span class="counter-icon" aria-hidden="true">📡</span>
           <span class="counter-text" id="offlineCounterText">0</span>
         </div>
         
-        <div id="status" style="font-size:13px;color:var(--muted);" role="status">Estado: Conectando...</div>
+        <div id="status" style="background:rgba(255,255,255,0.2);backdrop-filter:blur(10px);padding:8px 14px;border-radius:8px;font-size:0.85rem;color:white;font-weight:500;border:1px solid rgba(255,255,255,0.3);display:flex;align-items:center;gap:6px;" role="status">
+          <span id="statusIcon" style="font-size:10px;">🟢</span>
+          <span id="statusText">Conectado</span>
+        </div>
         
-        <a href="../index.html" id="btnCerrarSesion" class="ghost" style="font-size:11px;padding:4px 8px;text-decoration:none;display:inline-block;" title="Cerrar Sesión" aria-label="Cerrar sesión">
-          🔒 Salir
+        <a href="../index.html" id="btnCerrarSesion" style="background:rgba(239,68,68,0.95);color:white;padding:8px 16px;border-radius:8px;font-size:0.9rem;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(239,68,68,0.3);transition:all 0.2s;" title="Cerrar Sesión" aria-label="Cerrar sesión">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+          </svg>
+          Salir
         </a>
       </div>
     </header>
