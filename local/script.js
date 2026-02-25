@@ -6210,22 +6210,36 @@ function mostrarTopProductos() {
     if (pedido.items && Array.isArray(pedido.items)) {
       pedido.items.forEach(item => {
         const nombreProducto = item.nombre.toLowerCase().trim();
+        const esGranel = item.nombre && (
+          item.nombre.toLowerCase().includes('(granel)') || 
+          item.nombre.toLowerCase().includes('granel')
+        );
+        
         if (!conteoProductos[nombreProducto]) {
           conteoProductos[nombreProducto] = {
             nombre: item.nombre,
             cantidad: 0,
-            ventas: 0
+            ventas: 0,
+            esGranel: esGranel
           };
         }
-        conteoProductos[nombreProducto].cantidad += item.cantidad || 1;
-        conteoProductos[nombreProducto].ventas += (item.cantidad || 1) * (item.precio || 0);
+        
+        // Productos a granel: cantidad = 1 pedido, ventas = precio (está en item.cantidad)
+        // Productos normales: cantidad = item.cantidad, ventas = cantidad * precio
+        if (esGranel) {
+          conteoProductos[nombreProducto].cantidad += 1; // Contar como 1 pedido
+          conteoProductos[nombreProducto].ventas += item.cantidad || 0; // El precio está en cantidad
+        } else {
+          conteoProductos[nombreProducto].cantidad += item.cantidad || 1;
+          conteoProductos[nombreProducto].ventas += (item.cantidad || 1) * (item.precio || 0);
+        }
       });
     }
   });
   
-  // Ordenar por cantidad vendida
+  // Ordenar por ventas totales (más representativo para productos a granel)
   const productosOrdenados = Object.values(conteoProductos)
-    .sort((a, b) => b.cantidad - a.cantidad)
+    .sort((a, b) => b.ventas - a.ventas)
     .slice(0, 3);
   
   // Renderizar top 3
@@ -6239,7 +6253,10 @@ function mostrarTopProductos() {
   const medallas = ['🥇', '🥈', '🥉'];
   const colores = ['#f59e0b', '#9ca3af', '#cd7f32'];
   
-  contenedor.innerHTML = productosOrdenados.map((producto, index) => `
+  contenedor.innerHTML = productosOrdenados.map((producto, index) => {
+    const etiquetaCantidad = producto.esGranel ? 'Pedidos' : 'Unidades';
+    
+    return `
     <div style="background:white;padding:16px;border-radius:12px;border:3px solid ${colores[index]};box-shadow:0 4px 6px rgba(0,0,0,0.1);">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
         <span style="font-size:2rem;">${medallas[index]}</span>
@@ -6250,7 +6267,7 @@ function mostrarTopProductos() {
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:2px solid #e5e7eb;">
         <div>
-          <div style="font-size:0.8rem;color:#6b7280;">Unidades</div>
+          <div style="font-size:0.8rem;color:#6b7280;">${etiquetaCantidad}</div>
           <div style="font-size:1.3rem;font-weight:700;color:#4b6cb7;">${producto.cantidad}</div>
         </div>
         <div style="text-align:right;">
@@ -6259,7 +6276,8 @@ function mostrarTopProductos() {
         </div>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 /**
