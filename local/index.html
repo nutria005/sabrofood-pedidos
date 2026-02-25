@@ -65,42 +65,66 @@
     </header>
 
     <section class="resumen-caja-panel" aria-labelledby="resumen-title">
-      <div class="resumen-caja-card">
-        <h3 id="resumen-title">💰 Recaudación del Día</h3>
-        
-        <div class="total-general">
-          <span class="total-label">💰 TOTAL RECAUDADO:</span>
-          <span class="total-valor" id="totalRendir" aria-live="polite">$0</span>
+      <div class="resumen-caja-card-compact">
+        <!-- Total Principal Compacto -->
+        <div class="resumen-totales-principales">
+          <div class="total-card principal">
+            <div class="total-card-content">
+              <span class="total-icon">💰</span>
+              <div>
+                <small class="total-card-label">Total Recaudado</small>
+                <strong class="total-card-valor" id="totalRendir">$0</strong>
+              </div>
+            </div>
+          </div>
+          
+          <div class="total-card local">
+            <div class="total-card-content">
+              <span class="total-icon">🏢</span>
+              <div>
+                <small class="total-card-label">Total Local</small>
+                <strong class="total-card-valor" id="totalLocal">$0</strong>
+              </div>
+            </div>
+          </div>
         </div>
         
-        <div class="total-general" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-top: 12px;">
-          <span class="total-label">🏢 TOTAL LOCAL (Venta):</span>
-          <span class="total-valor" id="totalLocal" aria-live="polite">$0</span>
-        </div>
-        
-        <div class="resumen-grid-cuadre">
-          <div class="resumen-item efectivo">
-            <span class="resumen-label">💵 Efectivo</span>
-            <span class="resumen-valor" id="totalEfectivo" aria-live="polite">$0</span>
-            <small class="resumen-detalle" id="cantidadEfectivo">0 pedidos</small>
+        <!-- Grid Métodos de Pago Compacto -->
+        <div class="resumen-grid-compact">
+          <div class="resumen-mini efectivo">
+            <div class="resumen-mini-header">
+              <span class="mini-icon">💵</span>
+              <span class="mini-label">Efectivo</span>
+            </div>
+            <div class="resumen-mini-valor" id="totalEfectivo">$0</div>
+            <small class="resumen-mini-detalle" id="cantidadEfectivo">0 pedidos</small>
           </div>
           
-          <div class="resumen-item tarjetas">
-            <span class="resumen-label">💳 Débito/Crédito</span>
-            <span class="resumen-valor" id="totalTarjetas" aria-live="polite">$0</span>
-            <small class="resumen-detalle" id="cantidadTarjetas">0 pedidos</small>
+          <div class="resumen-mini tarjetas">
+            <div class="resumen-mini-header">
+              <span class="mini-icon">💳</span>
+              <span class="mini-label">Tarjetas</span>
+            </div>
+            <div class="resumen-mini-valor" id="totalTarjetas">$0</div>
+            <small class="resumen-mini-detalle" id="cantidadTarjetas">0 pedidos</small>
           </div>
           
-          <div class="resumen-item transferencias">
-            <span class="resumen-label">⏳ Transf. Pendientes</span>
-            <span class="resumen-valor" id="totalTransferencias" aria-live="polite">$0</span>
-            <small class="resumen-detalle" id="cantidadTransferencias">0 pedidos</small>
+          <div class="resumen-mini transferencias">
+            <div class="resumen-mini-header">
+              <span class="mini-icon">⏳</span>
+              <span class="mini-label">Pendientes</span>
+            </div>
+            <div class="resumen-mini-valor" id="totalTransferencias">$0</div>
+            <small class="resumen-mini-detalle" id="cantidadTransferencias">0 pedidos</small>
           </div>
           
-          <div class="resumen-item pagados">
-            <span class="resumen-label">✅ Transf. Pagadas</span>
-            <span class="resumen-valor" id="totalPagados" aria-live="polite">$0</span>
-            <small class="resumen-detalle" id="cantidadPagados">0 pedidos</small>
+          <div class="resumen-mini pagados">
+            <div class="resumen-mini-header">
+              <span class="mini-icon">✅</span>
+              <span class="mini-label">Pagadas</span>
+            </div>
+            <div class="resumen-mini-valor" id="totalPagados">$0</div>
+            <small class="resumen-mini-detalle" id="cantidadPagados">0 pedidos</small>
           </div>
         </div>
       </div>

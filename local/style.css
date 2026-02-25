@@ -1800,6 +1800,172 @@ header {
   margin-bottom: 16px;
 }
 
+/* ========================================
+   DISEÑO COMPACTO DE RECAUDACIÓN
+   ======================================== */
+.resumen-caja-card-compact {
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+  padding: 16px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e5e7eb;
+}
+
+/* Totales Principales (2 tarjetas horizontales) */
+.resumen-totales-principales {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.total-card {
+  border-radius: 10px;
+  padding: 12px 16px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s;
+}
+
+.total-card:hover {
+  transform: translateY(-2px);
+}
+
+.total-card.principal {
+  background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+}
+
+.total-card.local {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.total-card-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.total-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.total-card-label {
+  display: block;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.total-card-valor {
+  display: block;
+  font-size: 1.5rem;
+  color: white;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* Grid Compacto de Métodos de Pago */
+.resumen-grid-compact {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.resumen-mini {
+  background: white;
+  padding: 10px;
+  border-radius: 8px;
+  border: 2px solid #e5e7eb;
+  transition: all 0.2s;
+}
+
+.resumen-mini:hover {
+  transform: scale(1.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.resumen-mini.efectivo {
+  border-left-color: #22c55e;
+  border-left-width: 4px;
+}
+
+.resumen-mini.tarjetas {
+  border-left-color: #3b82f6;
+  border-left-width: 4px;
+}
+
+.resumen-mini.transferencias {
+  border-left-color: #f59e0b;
+  border-left-width: 4px;
+}
+
+.resumen-mini.pagados {
+  border-left-color: #10b981;
+  border-left-width: 4px;
+}
+
+.resumen-mini-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.mini-icon {
+  font-size: 1.1rem;
+}
+
+.mini-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.resumen-mini-valor {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #111827;
+  margin-bottom: 2px;
+}
+
+.resumen-mini-detalle {
+  font-size: 0.7rem;
+  color: #9ca3af;
+  display: block;
+}
+
+/* Responsive - Tablets */
+@media (max-width: 768px) {
+  .resumen-grid-compact {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+}
+
+/* Responsive - Móvil */
+@media (max-width: 480px) {
+  .resumen-totales-principales {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  
+  .resumen-grid-compact {
+    grid-template-columns: 1fr;
+  }
+  
+  .total-card-valor {
+    font-size: 1.3rem;
+  }
+}
+
+/* ========================================
+   ESTILOS ANTIGUOS (mantener compatibilidad)
+   ======================================== */
 .resumen-caja-card {
   background: linear-gradient(145deg, #f8fafc 0%, #e2e8f0 100%);
   padding: 24px;
