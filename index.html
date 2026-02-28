@@ -3,9 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Sistema de gestión de pedidos - Selector de Rol">
-  <meta name="theme-color" content="#4b6cb7">
-  <title>Sistema de Pedidos | Bienvenida</title>
+  <meta name="description" content="Sistema de gestión de pedidos y entregas para repartidores">
+  <meta name="theme-color" content="#667eea">
+  
+  <!-- PWA Meta Tags -->
+  <link rel="manifest" href="./manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Sabrofood Reparto">
+  
+  <!-- iOS Icons -->
+  <link rel="apple-touch-icon" sizes="72x72" href="./icons/icon-72.png">
+  <link rel="apple-touch-icon" sizes="96x96" href="./icons/icon-96.png">
+  <link rel="apple-touch-icon" sizes="128x128" href="./icons/icon-128.png">
+  <link rel="apple-touch-icon" sizes="144x144" href="./icons/icon-144.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="./icons/icon-152.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="384x384" href="./icons/icon-384.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="./icons/icon-512.png">
+  
+  <!-- Standard Favicon -->
+  <link rel="icon" type="image/png" sizes="32x32" href="./icons/icon-72.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="./icons/icon-72.png">
+  
+  <title>Sabrofood Reparto | Sistema de Entregas</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
@@ -279,9 +301,184 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+
+    /* ===================================
+       BANNER DE ACTUALIZACIÓN PWA
+       =================================== */
+    .update-banner {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(135deg, hsl(217 91% 60%), hsl(217 91% 50%));
+      color: white;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      z-index: 10000;
+      animation: slideDown 0.3s ease-out;
+      gap: 12px;
+    }
+
+    @keyframes slideDown {
+      from {
+        transform: translateY(-100%);
+      }
+      to {
+        transform: translateY(0);
+      }
+    }
+
+    .update-banner-content {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+    }
+
+    .update-banner-content svg {
+      flex-shrink: 0;
+    }
+
+    .update-banner-content span {
+      font-weight: 500;
+      font-size: 14px;
+    }
+
+    .update-banner-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-update-dismiss,
+    .btn-update-now {
+      padding: 6px 16px;
+      border-radius: 6px;
+      border: none;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-update-dismiss {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+    }
+
+    .btn-update-dismiss:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .btn-update-now {
+      background: white;
+      color: hsl(217 91% 50%);
+    }
+
+    .btn-update-now:hover {
+      background: hsl(0 0% 95%);
+      transform: scale(1.05);
+    }
+
+    @media (max-width: 600px) {
+      .update-banner {
+        flex-direction: column;
+        padding: 12px;
+        gap: 12px;
+      }
+
+      .update-banner-content span {
+        font-size: 13px;
+      }
+
+      .update-banner-actions {
+        width: 100%;
+      }
+
+      .btn-update-dismiss,
+      .btn-update-now {
+        flex: 1;
+      }
+    }
+
+    /* ===================================
+       BOTÓN DE INSTALACIÓN PWA
+       =================================== */
+    .btn-install-pwa {
+      display: none;
+      margin-top: 20px;
+      padding: 14px 28px;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+      width: 100%;
+      max-width: 320px;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .btn-install-pwa svg {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .btn-install-pwa:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
+    }
+
+    .btn-install-pwa:active {
+      transform: translateY(0);
+    }
+
+    .install-info {
+      display: none;
+      margin-top: 16px;
+      padding: 12px;
+      background: #ecfdf5;
+      border: 2px solid #10b981;
+      border-radius: 10px;
+      text-align: center;
+      font-size: 13px;
+      color: #065f46;
+      max-width: 320px;
+      width: 100%;
+      animation: fadeIn 0.3s ease-out;
+    }
+
+    .install-info strong {
+      color: #047857;
+      display: block;
+      margin-bottom: 4px;
+    }
   </style>
 </head>
 <body>
+
+  <!-- BANNER DE ACTUALIZACIÓN PWA -->
+  <div id="updateBanner" class="update-banner" style="display: none;">
+    <div class="update-banner-content">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+        <path d="M12 2v12m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M5 17v2a2 2 0 002 2h10a2 2 0 002-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Nueva versión disponible con mejoras</span>
+    </div>
+    <div class="update-banner-actions">
+      <button class="btn-update-dismiss" onclick="cerrarBannerActualizacion()">Ahora no</button>
+      <button class="btn-update-now" onclick="actualizarApp()">Actualizar</button>
+    </div>
+  </div>
 
   <!-- Pantalla de Login -->
   <div class="container">
@@ -350,6 +547,19 @@
           🔓 Ingresar
         </button>
       </form>
+      
+      <!-- BOTÓN DE INSTALACIÓN PWA -->
+      <button id="btnInstallPWA" class="btn-install-pwa" onclick="instalarPWA()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3"/>
+        </svg>
+        <span>Instalar Aplicación</span>
+      </button>
+      
+      <div id="installInfo" class="install-info">
+        <strong>💡 Consejo:</strong>
+        Instala la app para acceder rápido desde tu pantalla de inicio
+      </div>
     </div>
 
     <!-- Pantalla de Selección de Rol -->
@@ -560,6 +770,159 @@
         
         await supabaseLogout();
         window.location.reload();
+      }
+    }
+  </script>
+
+  <!-- ===================================
+       PWA SERVICE WORKER REGISTRATION
+       =================================== -->
+  <script>
+    // Variable global para el nuevo Service Worker
+    let newServiceWorker = null;
+
+    // Función para mostrar el banner de actualización
+    function mostrarBannerActualizacion() {
+      const banner = document.getElementById('updateBanner');
+      if (banner) {
+        banner.style.display = 'flex';
+      }
+    }
+
+    // Función para cerrar el banner
+    function cerrarBannerActualizacion() {
+      const banner = document.getElementById('updateBanner');
+      if (banner) {
+        banner.style.display = 'none';
+      }
+    }
+
+    // Función para actualizar la app
+    function actualizarApp() {
+      if (newServiceWorker) {
+        newServiceWorker.postMessage({ type: 'SKIP_WAITING' });
+      }
+      cerrarBannerActualizacion();
+    }
+
+    // Registrar Service Worker para PWA
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js')
+          .then((registration) => {
+            console.log('✅ Service Worker registrado correctamente:', registration.scope);
+            
+            // Manejar actualizaciones del Service Worker
+            registration.addEventListener('updatefound', () => {
+              newServiceWorker = registration.installing;
+              
+              newServiceWorker.addEventListener('statechange', () => {
+                if (newServiceWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  // Nueva versión disponible
+                  console.log('🔄 Nueva versión disponible');
+                  // Mostrar banner de actualización
+                  mostrarBannerActualizacion();
+                }
+              });
+            });
+            
+            // Verificar actualizaciones cada 30 segundos
+            setInterval(() => {
+              registration.update();
+            }, 30000);
+          })
+          .catch((error) => {
+            console.warn('⚠️ Error al registrar Service Worker:', error);
+          });
+        
+        // Recargar página cuando el SW tome control
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!refreshing) {
+            refreshing = true;
+            console.log('🔄 Service Worker actualizado, recargando...');
+            window.location.reload();
+          }
+        });
+      });
+    } else {
+      console.warn('⚠️ Service Workers no soportados en este navegador');
+    }
+
+    // Variable para guardar el prompt de instalación
+    let deferredPrompt = null;
+
+    // Función para instalar la PWA
+    function instalarPWA() {
+      if (!deferredPrompt) {
+        console.warn('⚠️ No hay prompt de instalación disponible');
+        return;
+      }
+
+      // Mostrar el prompt nativo
+      deferredPrompt.prompt();
+      
+      // Esperar a que el usuario responda
+      deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('✅ Usuario aceptó instalar la PWA');
+        } else {
+          console.log('❌ Usuario canceló la instalación');
+        }
+        deferredPrompt = null;
+      });
+    }
+
+    // Detectar instalación de PWA
+    window.addEventListener('beforeinstallprompt', (e) => {
+      console.log('📱 PWA instalable detectada');
+      // Prevenir el prompt automático
+      e.preventDefault();
+      
+      // Guardar el evento para mostrarlo después
+      deferredPrompt = e;
+      
+      // Mostrar botón de instalación
+      const btnInstall = document.getElementById('btnInstallPWA');
+      const installInfo = document.getElementById('installInfo');
+      if (btnInstall) {
+        btnInstall.style.display = 'flex';
+      }
+      if (installInfo) {
+        installInfo.style.display = 'block';
+      }
+    });
+
+    // Detectar cuando la PWA se instala
+    window.addEventListener('appinstalled', () => {
+      console.log('✅ PWA instalada correctamente');
+      deferredPrompt = null;
+      
+      // Ocultar botón de instalación
+      const btnInstall = document.getElementById('btnInstallPWA');
+      const installInfo = document.getElementById('installInfo');
+      if (btnInstall) {
+        btnInstall.style.display = 'none';
+      }
+      if (installInfo) {
+        installInfo.style.display = 'none';
+      }
+    });
+
+    // Detectar si se está ejecutando como PWA instalada
+    if (window.matchMedia('(display-mode: standalone)').matches || 
+        window.navigator.standalone === true) {
+      console.log('📱 Ejecutando como PWA instalada');
+      document.body.classList.add('pwa-mode');
+      
+      // Ocultar botón de instalación si ya está instalada
+      const btnInstall = document.getElementById('btnInstallPWA');
+      const installInfo = document.getElementById('installInfo');
+      if (btnInstall) {
+        btnInstall.style.display = 'none';
+      }
+      if (installInfo) {
+        installInfo.style.display = 'none';
       }
     }
   </script>

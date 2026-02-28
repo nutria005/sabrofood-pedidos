@@ -4,8 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Sistema administrativo de gestión de pedidos - Panel completo">
-  <meta name="theme-color" content="#4b6cb7">
-  <title>🏢 Admin Local | Sistema de Pedidos</title>
+  <meta name="theme-color" content="#667eea">
+  
+  <!-- PWA Meta Tags -->
+  <link rel="manifest" href="../manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Admin Local">
+  
+  <title>🏢 Admin Local | Sabrofood Reparto</title>
   <link rel="stylesheet" href="style.css?v=20251221">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../shared/supabase-config.js?v=20251217"></script>
@@ -227,14 +235,40 @@
             <label for="direccion" class="sr-only">Dirección de entrega</label>
             <input id="direccion" type="text" placeholder="📍 Dirección de entrega" style="margin-bottom:8px;" />
           </div>
+          
+          <!-- Checkbox de confirmación de dirección -->
+          <div class="form-row" style="margin-top: 12px; padding: 12px; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 2px solid #f59e0b; border-radius: 8px; display: none;" id="checkboxConfirmacionContainer">
+            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; user-select: none;">
+              <input type="checkbox" id="checkboxConfirmacionDireccion" style="margin-top: 3px; width: 18px; height: 18px; cursor: pointer;" />
+              <span style="font-size: 0.9rem; font-weight: 600; color: #92400e; line-height: 1.4;">
+                ⚠️ <strong>CONFIRMACIÓN OBLIGATORIA:</strong> Verifiqué que la dirección de entrega es correcta para este pedido
+              </span>
+            </label>
+          </div>
         </fieldset>
         
-        <div id="historialPreview" class="historial-preview" style="display:none; margin-bottom:16px;" aria-live="polite">
-          <div class="historial-header">
-            <span class="historial-title">📚 Historial del Cliente</span>
-            <span class="historial-count" id="historialCount"></span>
+        <div id="historialPreview" class="historial-preview-nuevo" style="display:none; margin-bottom:16px;" aria-live="polite">
+          <div class="historial-header-nuevo">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="historial-icon">📚</span>
+              <div>
+                <span class="historial-title-nuevo">Historial del Cliente</span>
+                <span class="historial-count-nuevo" id="historialCount"></span>
+              </div>
+            </div>
           </div>
-          <div id="historialContent" class="historial-content">
+          
+          <!-- Sección de Direcciones Únicas -->
+          <div id="direccionesUnicas" class="direcciones-unicas-container" style="display:none;">
+            <div class="direcciones-header">
+              <span style="font-size: 0.85rem; font-weight: 700; color: #1e40af; text-transform: uppercase; letter-spacing: 0.5px;">📍 Direcciones de Entrega</span>
+              <span style="font-size: 0.75rem; color: #6b7280;">Selecciona una dirección</span>
+            </div>
+            <div id="listaDirecciones" class="lista-direcciones"></div>
+          </div>
+          
+          <!-- Sección de Historial de Pedidos -->
+          <div id="historialContent" class="historial-content-nuevo">
             <div class="historial-loading">🔍 Buscando historial...</div>
           </div>
         </div>

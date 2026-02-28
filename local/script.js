@@ -576,6 +576,24 @@ function getElements(...ids) {
 function clearForm(formId) {
   const form = getElement(formId);
   if (form) form.reset();
+  
+  // Ocultar checkbox de confirmación al limpiar formulario
+  ocultarCheckboxConfirmacion();
+  
+  // Ocultar historial
+  const historialPreview = document.getElementById('historialPreview');
+  if (historialPreview) {
+    historialPreview.style.display = 'none';
+  }
+  
+  // Limpiar clases de resaltado
+  const inputs = ['nombre', 'direccion'];
+  inputs.forEach(inputId => {
+    const input = document.getElementById(inputId);
+    if (input) {
+      input.classList.remove('campo-autocompletado');
+    }
+  });
 }
 
 function formatDateISO(date) {
@@ -1389,6 +1407,23 @@ async function guardarPedido() {
     const [nombreEl, direccionEl, telefonoEl, fechaEl, metodoEl, notasEl, rutaEl, asignadoEl] = 
       getElements('nombre', 'direccion', 'telefono', 'fechaEntrega', 'metodoPago', 'notas', 'rutaSelect', 'asignadoA');
     
+    // NUEVA VALIDACIÓN: Verificar checkbox de confirmación si está visible
+    const checkboxContainer = document.getElementById('checkboxConfirmacionContainer');
+    const checkbox = document.getElementById('checkboxConfirmacionDireccion');
+    
+    if (checkboxContainer && checkboxContainer.style.display !== 'none') {
+      if (!checkbox || !checkbox.checked) {
+        ErrorHandler.mostrarError('⚠️ ERROR: Debes CONFIRMAR que verificaste la dirección de entrega.\n\nMarca el checkbox amarillo antes de guardar el pedido.');
+        
+        // Resaltar el checkbox con animación
+        if (checkboxContainer) {
+          checkboxContainer.style.animation = 'pulseWarning 1.5s ease-in-out 3';
+        }
+        
+        return;
+      }
+    }
+    
     // Validación CRÍTICA: Verificar que se haya seleccionado un método de pago
     if (!metodoEl.value || metodoEl.value === '') {
       ErrorHandler.mostrarError('¡ERROR! Debes seleccionar un método de pago antes de agendar.');
@@ -1478,6 +1513,9 @@ async function guardarPedido() {
       clearForm('formAgregar');
       lineasPedido = [];
       renderLineasPedido();
+      
+      // Ocultar checkbox de confirmación después de guardar exitosamente
+      ocultarCheckboxConfirmacion();
       setFechaHoyDefault();
       getElement('formModalBackdrop').style.display = 'none';
       cargarPedidos();
@@ -5102,6 +5140,8 @@ async function buscarHistorialPrevio(telefono) {
   const previewEl = document.getElementById('historialPreview');
   const contentEl = document.getElementById('historialContent');
   const countEl = document.getElementById('historialCount');
+  const direccionesUnicasEl = document.getElementById('direccionesUnicas');
+  const listaDireccionesEl = document.getElementById('listaDirecciones');
   
   if (!telefono || telefono.length < 7) {
     previewEl.style.display = 'none';
@@ -5111,6 +5151,7 @@ async function buscarHistorialPrevio(telefono) {
   // Mostrar estado de carga
   previewEl.style.display = 'block';
   contentEl.innerHTML = '<div class="historial-loading">🔍 Buscando historial...</div>';
+  direccionesUnicasEl.style.display = 'none';
   
   try {
     // Buscar pedidos del cliente por teléfono
@@ -5119,27 +5160,78 @@ async function buscarHistorialPrevio(telefono) {
       .select('*')
       .eq('telefono', telefono)
       .order('created_at', { ascending: false })
-      .limit(5); // Solo últimos 5 pedidos para preview
+      .limit(10); // Últimos 10 pedidos para mejor análisis
     
     if (error) throw error;
     
     if (!data || data.length === 0) {
       contentEl.innerHTML = '<div class="historial-empty">📝 Cliente nuevo - sin historial previo</div>';
-      countEl.textContent = 'Nuevo cliente';
+      countEl.textContent = '0 pedidos';
       return;
     }
     
-    // Mostrar historial compacto
-    countEl.textContent = `${data.length} pedidos${data.length >= 5 ? '+' : ''}`;
+    // Extraer direcciones únicas con contador de frecuencia
+    const direccionesMap = new Map();
+    const nombresSet = new Set();
     
-    let historialHTML = '';
-    data.forEach((pedido, index) => {
+    data.forEach(pedido => {
+      // Recolectar direcciones
+      if (pedido.direccion && pedido.direccion.trim()) {
+        const dir = pedido.direccion.trim();
+        if (direccionesMap.has(dir)) {
+          direccionesMap.set(dir, direccionesMap.get(dir) + 1);
+        } else {
+          direccionesMap.set(dir, 1);
+        }
+      }
+      
+      // Recolectar nombres (para usar el más reciente)
+      if (pedido.nombre && pedido.nombre.trim()) {
+        nombresSet.add(pedido.nombre.trim());
+      }
+    });
+    
+    // Convertir a array y ordenar por frecuencia (más usadas primero)
+    const direccionesArray = Array.from(direccionesMap.entries())
+      .sort((a, b) => b[1] - a[1]);
+    
+    // Mostrar contador
+    countEl.textContent = `${data.length} pedido${data.length !== 1 ? 's' : ''}`;
+    
+    // Mostrar direcciones únicas si hay más de una
+    if (direccionesArray.length > 0) {
+      direccionesUnicasEl.style.display = 'block';
+      
+      let direccionesHTML = '';
+      direccionesArray.forEach(([direccion, frecuencia], index) => {
+        const nombreMasReciente = nombresSet.values().next().value || 'Cliente';
+        const esMasUsada = index === 0;
+        
+        direccionesHTML += `
+          <button class="btn-direccion" onclick="seleccionarDireccion('${direccion.replace(/'/g, "\\'")}', '${nombreMasReciente.replace(/'/g, "\\'")}', ${frecuencia})" type="button">
+            <span class="direccion-texto">
+              <span>📍</span>
+              <span style="flex: 1;">${direccion}</span>
+            </span>
+            <span class="direccion-badge">${frecuencia} ${frecuencia === 1 ? 'vez' : 'veces'}${esMasUsada ? ' ⭐' : ''}</span>
+          </button>
+        `;
+      });
+      
+      listaDireccionesEl.innerHTML = direccionesHTML;
+    }
+    
+    // Mostrar historial compacto de pedidos
+    let historialHTML = '<div style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid #e0f2fe;"><strong style="color: #1e40af; font-size: 0.85rem;">📋 Últimos Pedidos</strong></div>';
+    
+    data.slice(0, 5).forEach((pedido, index) => {
       const fecha = pedido.fecha ? new Date(pedido.fecha).toLocaleDateString('es-CL') : 'Sin fecha';
       const productos = Array.isArray(pedido.items) && pedido.items.length 
         ? pedido.items.map(item => `${item.cantidad}× ${item.nombre}`).join(', ')
         : 'Sin productos';
       const total = pedido.total ? `$${pedido.total.toLocaleString('es-CL')}` : '$0';
       const metodoTexto = METODOS[pedido.metodo_pago] || pedido.metodo_pago || 'Efectivo';
+      const direccionPedido = pedido.direccion || 'Sin dirección';
       
       historialHTML += `
         <div class="historial-item">
@@ -5148,11 +5240,12 @@ async function buscarHistorialPrevio(telefono) {
             <span class="historial-item-total">${total}</span>
           </div>
           <div class="historial-item-products">
+            📍 ${direccionPedido}<br>
             🛒 ${productos}<br>
             💳 ${metodoTexto} ${pedido.entregado ? '• ✅ Entregado' : '• ⏳ Pendiente'}
           </div>
-          <button class="btn-copiar-datos-historial" onclick="copiarDatosHistorial('${pedido.nombre?.replace(/'/g, "\\'")}', '${pedido.direccion?.replace(/'/g, "\\'")}', '${pedido.metodo_pago || 'E'}')" title="Copiar nombre y dirección al formulario">
-            📋 Copiar Datos
+          <button class="btn-copiar-datos-historial" onclick="copiarDatosHistorial('${pedido.nombre?.replace(/'/g, "\\'")}', '${pedido.direccion?.replace(/'/g, "\\'")}', '${pedido.metodo_pago || 'E'}')" title="Copiar nombre y dirección al formulario" type="button">
+            📋 Copiar Datos de este Pedido
           </button>
         </div>
       `;
@@ -5168,6 +5261,47 @@ async function buscarHistorialPrevio(telefono) {
 }
 
 /**
+ * Seleccionar una dirección específica del historial
+ * @param {string} direccion - Dirección seleccionada
+ * @param {string} nombre - Nombre del cliente
+ * @param {number} frecuencia - Veces que se usó esta dirección
+ */
+function seleccionarDireccion(direccion, nombre, frecuencia) {
+  // Copiar nombre
+  const nombreInput = document.getElementById('nombre');
+  if (nombreInput && nombre) {
+    nombreInput.value = nombre;
+    resaltarCampoAutocompletado(nombreInput);
+  }
+  
+  // Copiar dirección
+  const direccionInput = document.getElementById('direccion');
+  if (direccionInput && direccion) {
+    direccionInput.value = direccion;
+    resaltarCampoAutocompletado(direccionInput);
+  }
+  
+  // Mostrar checkbox de confirmación
+  mostrarCheckboxConfirmacion();
+  
+  // Desmarcar el checkbox para forzar confirmación
+  const checkbox = document.getElementById('checkboxConfirmacionDireccion');
+  if (checkbox) {
+    checkbox.checked = false;
+  }
+  
+  // Mostrar notificación de éxito
+  const mensajeFrecuencia = frecuencia > 1 ? ` (usada ${frecuencia} veces)` : ' (dirección nueva)';
+  ErrorHandler.mostrarExito(`✅ Dirección seleccionada${mensajeFrecuencia}\n⚠️ VERIFICA que sea correcta para este pedido`);
+  
+  // Enfocar el campo de fecha para continuar
+  const fechaInput = document.getElementById('fechaEntrega');
+  if (fechaInput) {
+    setTimeout(() => fechaInput.focus(), 300);
+  }
+}
+
+/**
  * Copiar datos de un pedido del historial al formulario actual
  * @param {string} nombre - Nombre del cliente
  * @param {string} direccion - Dirección del cliente
@@ -5178,12 +5312,14 @@ function copiarDatosHistorial(nombre, direccion, metodoPago) {
   const nombreInput = document.getElementById('nombre');
   if (nombreInput && nombre) {
     nombreInput.value = nombre;
+    resaltarCampoAutocompletado(nombreInput);
   }
   
   // Copiar dirección
   const direccionInput = document.getElementById('direccion');
   if (direccionInput && direccion) {
     direccionInput.value = direccion;
+    resaltarCampoAutocompletado(direccionInput);
   }
   
   // NO copiar método de pago - El operador debe seleccionarlo manualmente
@@ -5193,19 +5329,82 @@ function copiarDatosHistorial(nombre, direccion, metodoPago) {
     metodoPagoSelect.value = ''; // Resetear a la opción por defecto
   }
   
-  // Mostrar notificación de éxito
-  ErrorHandler.mostrarExito('✅ Datos copiados: Nombre y Dirección');
+  // Mostrar checkbox de confirmación
+  mostrarCheckboxConfirmacion();
   
-  // Ocultar el historial después de copiar (opcional)
-  const historialPreview = document.getElementById('historialPreview');
-  if (historialPreview) {
-    historialPreview.style.display = 'none';
+  // Desmarcar el checkbox para forzar confirmación
+  const checkbox = document.getElementById('checkboxConfirmacionDireccion');
+  if (checkbox) {
+    checkbox.checked = false;
+  }
+  
+  // Mostrar notificación de advertencia
+  ErrorHandler.mostrarExito('📋 Datos copiados: Nombre y Dirección\n⚠️ CONFIRMA que la dirección sea correcta');
+  
+  // Enfocar el campo de fecha para continuar
+  const fechaInput = document.getElementById('fechaEntrega');
+  if (fechaInput) {
+    setTimeout(() => fechaInput.focus(), 300);
+  }
+}
+
+/**
+ * Resaltar visualmente un campo que fue autocompletado
+ * @param {HTMLElement} inputElement - Campo a resaltar
+ */
+function resaltarCampoAutocompletado(inputElement) {
+  if (!inputElement) return;
+  
+  // Agregar clase de animación
+  inputElement.classList.add('campo-autocompletado');
+  
+  // Remover la clase después de la animación (4.5 segundos = 3 ciclos de 1.5s)
+  setTimeout(() => {
+    inputElement.classList.remove('campo-autocompletado');
+  }, 4500);
+}
+
+/**
+ * Mostrar el checkbox de confirmación de dirección
+ */
+function mostrarCheckboxConfirmacion() {
+  const container = document.getElementById('checkboxConfirmacionContainer');
+  if (container) {
+    container.style.display = 'block';
+    
+    // Animar la aparición
+    container.style.opacity = '0';
+    container.style.transform = 'translateY(-10px)';
+    
+    setTimeout(() => {
+      container.style.transition = 'all 0.3s ease-out';
+      container.style.opacity = '1';
+      container.style.transform = 'translateY(0)';
+    }, 50);
+  }
+}
+
+/**
+ * Ocultar el checkbox de confirmación de dirección
+ */
+function ocultarCheckboxConfirmacion() {
+  const container = document.getElementById('checkboxConfirmacionContainer');
+  const checkbox = document.getElementById('checkboxConfirmacionDireccion');
+  
+  if (container) {
+    container.style.display = 'none';
+  }
+  
+  if (checkbox) {
+    checkbox.checked = false;
   }
 }
 
 // Event listener para el campo teléfono
 function configurarBusquedaHistorial() {
   const telefonoInput = document.getElementById('telefono');
+  const direccionInput = document.getElementById('direccion');
+  
   if (!telefonoInput) return;
   
   telefonoInput.addEventListener('input', function() {
@@ -5221,6 +5420,18 @@ function configurarBusquedaHistorial() {
       buscarHistorialPrevio(telefono);
     }, 500); // Esperar 500ms después de dejar de escribir
   });
+  
+  // Listener para detectar cuando el usuario modifica manualmente la dirección
+  if (direccionInput) {
+    direccionInput.addEventListener('input', function() {
+      // Si el usuario escribe manualmente, ocultar el checkbox de confirmación
+      // (solo si el campo tenía la clase de autocompletado)
+      if (this.classList.contains('campo-autocompletado')) {
+        this.classList.remove('campo-autocompletado');
+        ocultarCheckboxConfirmacion();
+      }
+    });
+  }
   
   // Limpiar historial cuando se limpia el teléfono
   telefonoInput.addEventListener('blur', function() {
