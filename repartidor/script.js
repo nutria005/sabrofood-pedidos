@@ -4408,7 +4408,7 @@ async function mostrarModalCarga() {
         
         // Mostrar producto grande y cliente pequeño debajo
         items += `
-          <div class="item-carga${checkedClass}" data-checkbox-id="${checkboxId}">
+          <div class="item-carga${checkedClass}" data-checkbox-id="${checkboxId}" onclick="toggleItemCarga(this, event)">
             <input type="checkbox" class="checkbox-carga" id="${checkboxId}" ${checked}>
             <label for="${checkboxId}" class="item-texto">
               <div class="item-producto-nombre">${item.nombre}</div>
@@ -4429,10 +4429,6 @@ async function mostrarModalCarga() {
     // Single DOM write
     modalBody.innerHTML = html;
     totalBultosEl.textContent = totalBultos;
-    
-    // Event delegation - UN SOLO listener
-    modalBody.removeEventListener('change', handleCheckboxChange);
-    modalBody.addEventListener('change', handleCheckboxChange);
   }
   });
 }
@@ -4442,29 +4438,30 @@ async function mostrarModalCarga() {
  * Guarda/elimina items marcados en localStorage usando ID único (pedido + producto)
  */
 function handleCheckboxChange(event) {
-  if (event.target.classList.contains('checkbox-carga')) {
-    const itemCarga = event.target.closest('.item-carga');
-    if (itemCarga) {
-      const checkboxId = itemCarga.dataset.checkboxId;
-      const checked = event.target.checked;
-      
-      // Actualizar UI
-      itemCarga.classList.toggle('checked', checked);
-      
-      // Actualizar localStorage usando el ID único
-      if (checked) {
-        agregarItemMarcado(checkboxId);
-      } else {
-        eliminarItemMarcado(checkboxId);
-      }
-    }
-  }
-}
-
-/**
- * Cerrar modal de resumen de carga
+  if (event.target.classList.contains usando onclick directo (más confiable)
+ * Guarda/elimina items marcados en localStorage usando ID único (pedido + producto)
+ * Esta función se llama directamente desde el HTML con onclick, nunca se pierde
  */
-function cerrarModalCarga() {
+function toggleItemCarga(itemCarga, event) {
+  // Prevenir que el click en el checkbox dispare dos veces
+  if (event && event.target.type === 'checkbox') {
+    return;
+  }
+  
+  const checkbox = itemCarga.querySelector('.checkbox-carga');
+  if (!checkbox) return;
+  
+  // Toggle del checkbox
+  checkbox.checked = !checkbox.checked;
+  
+  const checkboxId = itemCarga.dataset.checkboxId;
+  const checked = checkbox.checked;
+  
+  // Actualizar UI
+  itemCarga.classList.toggle('checked', checked);
+  
+  // Actualizar Supabase usando el ID único
+  if (checked) {
   const modal = document.getElementById('modalCarga');
   const modalBody = document.getElementById('modalCargaBody');
   
