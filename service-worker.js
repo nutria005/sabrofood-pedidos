@@ -1,74 +1,93 @@
-// Sabrofood Reparto PWA Service Worker
-// Versión: 1.0.0
-// Fecha: 27-02-2026
+// ===================================
+// 🚚 SABROFOOD REPARTO PWA SERVICE WORKER
+// ===================================
+// Versión: 2.1.0-ios-fix
+// Fecha: 10-03-2026
+// 
+// CAMBIOS EN ESTA VERSIÓN:
+// - Network First para archivos críticos (script.js, style.css, index.html)
+// - Cache First solo para assets estáticos (fuentes, imágenes, libs)
+// - Mejor manejo de errores y logs
+// - Soporte para actualización forzada desde la app
+// - Prevención de caché agresivo en iOS PWA
+// - Timeout de 3s en peticiones de red
+// ===================================
 
-const CACHE_VERSION = 'sabrofood-reparto-v1.0.0-20260227';
+const CACHE_VERSION = 'sabrofood-reparto-v2.1.0-ios-fix';
 const CACHE_NAME = `${CACHE_VERSION}-static`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 
-// Archivos a cachear para funcionamiento offline
-const STATIC_ASSETS = [
-  './',
+// ===================================
+// CONFIGURACIÓN DE CACHÉ
+// ===================================
+
+// 🔥 ARCHIVOS CRÍTICOS - Network First (siempre buscar versión nueva primero)
+// Estos archivos deben estar SIEMPRE actualizados para que los fixes funcionen
+const NETWORK_FIRST_FILES = [
   './index.html',
-  './manifest.json',
   './local/index.html',
+  './local/script.js',
   './local/style.css',
   './repartidor/index.html',
+  './repartidor/script.js',
   './repartidor/style.css',
   './shared/auth.js',
   './shared/roles-config.js',
   './shared/route-protection.js',
-  './shared/supabase-config.js',
-  // Fuentes de Google
-  'https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap'
+  './shared/supabase-config.js'
 ];
 
-// URLs que NUNCA deben cachearse (seguridad y tiempo real)
+// 📦 ASSETS ESTÁTICOS - Cache First (ok si están cacheados)
+// Fuentes, librerías, manifest, etc. No cambian frecuentemente
+const CACHE_FIRST_ASSETS = [
+  './',
+  './manifest.json',
+  // Fuentes de Google
+  'https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap',
+  'https://fonts.gstatic.com'
+];
+
+// 🚫 URLs QUE NUNCA SE CACHEAN - Solo APIs y auth
 const NEVER_CACHE = [
-  'supabase-config.js',       // Contiene credenciales
   '.supabase.co',             // API de Supabase
   'supabase.co',              // Realtime y auth
   '/auth/',                   // Endpoints de autenticación
   '/rest/',                   // API REST de Supabase
-  '/realtime/',               // WebSockets tiempo real
-  'cdn.jsdelivr.net'          // CDN de Supabase
+  '/realtime/'                // WebSockets tiempo real
 ];
 
 // ===================================
-// INSTALACIÓN DEL SERVICE WORKER
+// 📦 INSTALACIÓN DEL SERVICE WORKER
 // ===================================
 self.addEventListener('install', (event) => {
-  console.log('🚚 [SW Reparto] Instalando Service Worker...', CACHE_VERSION);
+  console.log('[SW Reparto] 🚀 Instalando Service Worker...', CACHE_VERSION);
+  console.log('[SW Reparto] 📋 Estrategia: Network First para archivos críticos, Cache First para assets');
 
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('🚚 [SW Reparto] Cacheando archivos estáticos');
-        // Cachear archivos uno por uno para evitar fallos completos
-        return Promise.allSettled(
-          STATIC_ASSETS.map(url => 
-            cache.add(url).catch(err => {
-              console.warn(`⚠️ No se pudo cachear ${url}:`, err);
-              return null;
-            })
-          )
-        );
+        console.log('[SW Reparto] 💾 Pre-cacheando archivos estáticos...');
+        // Solo pre-cachear assets que no cambian frecuentemente
+        return cache.addAll(CACHE_FIRST_ASSETS);
       })
       .then(() => {
-        console.log('✅ [SW Reparto] Archivos cacheados correctamente');
-        return self.skipWaiting(); // Activar inmediatamente
+        console.log('[SW Reparto] ✅ Pre-caché completado');
+        // NO hacer skipWaiting aquí - esperar a que la app lo solicite
+        // return self.skipWaiting(); 
       })
       .catch((error) => {
-        console.error('❌ [SW Reparto] Error al cachear:', error);
+        console.error('[SW Reparto] ❌ Error al cachear:', error);
+        // Aún así, marcar como instalado
+        return self.skipWaiting();
       })
   );
 });
 
 // ===================================
-// ACTIVACIÓN Y LIMPIEZA DE CACHÉS VIEJOS
+// 🔄 ACTIVACIÓN Y LIMPIEZA DE CACHÉS VIEJOS
 // ===================================
 self.addEventListener('activate', (event) => {
-  console.log('🚚 [SW Reparto] Activando Service Worker...', CACHE_VERSION);
+  console.log('[SW Reparto] 🔄 Activando Service Worker...', CACHE_VERSION);
 
   event.waitUntil(
     caches.keys()
@@ -82,63 +101,126 @@ self.addEventListener('activate', (event) => {
                      name !== DATA_CACHE;
             })
             .map((name) => {
-              console.log('🗑️ [SW Reparto] Eliminando caché viejo:', name);
+              console.log('[SW Reparto] 🗑️ Eliminando caché viejo:', name);
               return caches.delete(name);
             })
         );
       })
       .then(() => {
-        console.log('✅ [SW Reparto] Service Worker activado y limpio');
+        console.log('[SW Reparto] ✅ Service Worker activado y limpio');
         return self.clients.claim(); // Tomar control inmediato
       })
   );
 });
 
 // ===================================
-// INTERCEPTAR PETICIONES (FETCH)
+// 🌐 INTERCEPTAR PETICIONES (FETCH)
 // ===================================
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // 🔒 REGLA 1: NUNCA cachear URLs sensibles o de Supabase
+  // 🚫 REGLA 1: APIs de Supabase - Network Only (nunca cachear)
   if (shouldNeverCache(url.href)) {
-    event.respondWith(fetch(request)); // Ir directo a la red
+    event.respondWith(
+      fetch(request).catch(error => {
+        console.log('[SW Reparto] 📡 API offline:', request.url);
+        return new Response(
+          JSON.stringify({ error: 'Sin conexión a internet' }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } }
+        );
+      })
+    );
     return;
   }
 
-  // 🔄 REGLA 2: Network First para JS y CSS (permite actualizaciones rápidas)
-  const pathname = url.pathname.toLowerCase();
-  if (pathname.endsWith('.js') || pathname.endsWith('.css')) {
-    event.respondWith(networkFirst(request));
+  // 🔥 REGLA 2: Archivos críticos - Network First (siempre buscar nueva versión)
+  if (isNetworkFirstFile(url.pathname)) {
+    event.respondWith(networkFirstStrategy(request));
     return;
   }
 
-  // 📦 REGLA 3: Cache First para HTML, imágenes y otros archivos estáticos
-  if (isStaticAsset(url)) {
-    event.respondWith(cacheFirst(request));
-    return;
-  }
-
-  // 🌐 REGLA 4: Network First para todo lo demás
-  event.respondWith(networkFirst(request));
+  // 📦 REGLA 3: Assets estáticos - Cache First
+  event.respondWith(cacheFirstStrategy(request));
 });
 
 // ===================================
-// ESTRATEGIAS DE CACHÉ
+// 📋 ESTRATEGIAS DE CACHÉ
 // ===================================
 
-// Cache First: Intenta desde caché, si falla va a la red
-async function cacheFirst(request) {
+/**
+ * 🔥 NETWORK FIRST - Para archivos críticos
+ * Intenta descargar de red primero, usa caché solo si falla
+ * Esto asegura que iOS PWA siempre tenga la última versión
+ */
+async function networkFirstStrategy(request) {
+  const url = request.url;
+  
   try {
+    // Intentar red primero con timeout de 3 segundos
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    
+    const networkResponse = await fetch(request, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    
+    // Si la respuesta es exitosa, actualizar caché
+    if (networkResponse && networkResponse.status === 200) {
+      console.log('[SW Reparto] ✅ Archivo crítico actualizado desde red:', url);
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(request, networkResponse.clone());
+      return networkResponse;
+    }
+    
+    return networkResponse;
+
+  } catch (error) {
+    // Error de red o timeout - intentar caché
+    console.log('[SW Reparto] 📡 Red no disponible, usando caché:', url);
     const cachedResponse = await caches.match(request);
+    
     if (cachedResponse) {
+      console.log('[SW Reparto] 💾 Sirviendo desde caché (offline):', url);
       return cachedResponse;
     }
+    
+    // No hay caché - retornar error
+    console.error('[SW Reparto] ❌ No disponible ni en red ni en caché:', url);
+    return new Response('Archivo no disponible offline', {
+      status: 503,
+      statusText: 'Service Unavailable'
+    });
+  }
+}
 
+/**
+ * 📦 CACHE FIRST - Para assets estáticos
+ * Usa caché primero, descarga si no existe
+ * Opcional: actualiza en segundo plano
+ */
+async function cacheFirstStrategy(request) {
+  const cachedResponse = await caches.match(request);
+  
+  // Si existe en caché, devolverlo inmediatamente
+  if (cachedResponse) {
+    // Actualizar en segundo plano (opcional)
+    fetch(request)
+      .then(networkResponse => {
+        if (networkResponse && networkResponse.status === 200) {
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(request, networkResponse);
+          });
+        }
+      })
+      .catch(() => {}); // Ignorar errores de actualización
+    
+    return cachedResponse;
+  }
+
+  // No está en caché, descargar y cachear
+  try {
     const networkResponse = await fetch(request);
     
-    // Solo cachear respuestas exitosas
     if (networkResponse && networkResponse.status === 200) {
       const cache = await caches.open(CACHE_NAME);
       cache.put(request, networkResponse.clone());
@@ -147,103 +229,86 @@ async function cacheFirst(request) {
     return networkResponse;
 
   } catch (error) {
-    console.error('❌ [SW Reparto] Error en Cache First:', error);
-    
-    // Intentar respuesta desde caché como fallback
+    // Si falla la red, intentar caché
     const cachedResponse = await caches.match(request);
     if (cachedResponse) {
+      console.log('[SW Reparto] 📡 Modo Offline: Sirviendo desde caché:', request.url);
       return cachedResponse;
     }
     
-    // Fallback básico para HTML
-    if (request.destination === 'document') {
-      return caches.match('./index.html');
-    }
-    
-    return new Response('Offline - Recurso no disponible', {
-      status: 503,
-      statusText: 'Service Unavailable'
-    });
-  }
-}
-
-// Network First: Intenta red primero, si falla va al caché
-async function networkFirst(request) {
-  try {
-    const networkResponse = await fetch(request);
-    
-    // Solo cachear respuestas exitosas
-    if (networkResponse && networkResponse.status === 200) {
-      const cache = await caches.open(DATA_CACHE);
-      cache.put(request, networkResponse.clone());
-    }
-    
-    return networkResponse;
-
-  } catch (error) {
-    console.warn('⚠️ [SW Reparto] Network First fallo, intentando caché:', request.url);
-    const cachedResponse = await caches.match(request);
-    
-    if (cachedResponse) {
-      return cachedResponse;
-    }
-    
-    // Fallback para HTML
-    if (request.destination === 'document') {
-      return caches.match('./index.html');
-    }
-    
+    // Si no hay caché, retornar error
     throw error;
   }
 }
 
 // ===================================
-// FUNCIONES AUXILIARES
+// 🛠️ FUNCIONES DE UTILIDAD
 // ===================================
 
-// Verificar si una URL nunca debe cachearse
+/**
+ * Verificar si una URL NO debe cachearse (solo APIs)
+ */
 function shouldNeverCache(url) {
   return NEVER_CACHE.some(pattern => url.includes(pattern));
 }
 
-// Verificar si es un archivo estático cacheable
-function isStaticAsset(url) {
-  const pathname = url.pathname.toLowerCase();
-  const staticExtensions = ['.html', '.png', '.jpg', '.jpeg', '.svg', '.ico', '.webp', '.json'];
-  return staticExtensions.some(ext => pathname.endsWith(ext));
+/**
+ * Verificar si un archivo debe usar estrategia Network First
+ */
+function isNetworkFirstFile(pathname) {
+  return NETWORK_FIRST_FILES.some(path => {
+    const fileName = path.split('/').pop();
+    return pathname.includes(fileName);
+  });
 }
 
 // ===================================
-// MANEJO DE MENSAJES
+// 📨 MENSAJES DEL CLIENTE
 // ===================================
 self.addEventListener('message', (event) => {
+  // Comando: Activar nuevo service worker inmediatamente
   if (event.data && event.data.type === 'SKIP_WAITING') {
-    console.log('🚚 [SW Reparto] Forzando activación inmediata');
+    console.log('[SW Reparto] 🚀 Comando recibido: Activar nueva versión inmediatamente');
     self.skipWaiting();
   }
-  
-  if (event.data && event.data.type === 'CLEAR_CACHE') {
-    console.log('🗑️ [SW Reparto] Limpiando todos los cachés');
+
+  // Comando: Obtener versión actual del SW
+  if (event.data && event.data.type === 'GET_VERSION') {
+    console.log('[SW Reparto] 📋 Enviando versión:', CACHE_VERSION);
+    event.ports[0].postMessage({ version: CACHE_VERSION });
+  }
+
+  // Comando: Limpiar TODO el caché (actualización forzada)
+  if (event.data && event.data.type === 'CLEAR_ALL_CACHE') {
+    console.log('[SW Reparto] 🗑️ Limpiando TODO el caché...');
     event.waitUntil(
       caches.keys().then(cacheNames => {
         return Promise.all(
-          cacheNames.map(cacheName => caches.delete(cacheName))
+          cacheNames.map(cacheName => {
+            console.log('[SW Reparto] 🗑️ Eliminando:', cacheName);
+            return caches.delete(cacheName);
+          })
         );
+      }).then(() => {
+        console.log('[SW Reparto] ✅ Caché limpiado completamente');
+        // Notificar a la app
+        self.clients.matchAll().then(clients => {
+          clients.forEach(client => {
+            client.postMessage({ type: 'CACHE_CLEARED' });
+          });
+        });
       })
     );
   }
 });
 
 // ===================================
-// SINCRONIZACIÓN EN BACKGROUND
+// 🎯 INICIALIZACIÓN
 // ===================================
-self.addEventListener('sync', (event) => {
-  console.log('🔄 [SW Reparto] Background sync:', event.tag);
-  
-  if (event.tag === 'sync-pedidos') {
-    event.waitUntil(syncPedidos());
-  }
-});
+console.log('[SW Reparto] 🚀 Service Worker cargado:', CACHE_VERSION);
+console.log('[SW Reparto] 📋 Network First:', NETWORK_FIRST_FILES.length, 'archivos');
+console.log('[SW Reparto] 📦 Cache First:', CACHE_FIRST_ASSETS.length, 'assets');
+
 
 async function syncPedidos() {
   try {

@@ -1332,7 +1332,7 @@ async function cargarPedidos() {
         datosLocal = cachedData;
         render(datosLocal);
         updateResultCount(datosLocal.length || 0, '');
-        actualizarResumenCaja(datosLocal);
+        actualizarResumenCaja(datosLocal, filtroActual);
         ErrorHandler.mostrarWarning('⚠️ Supabase no responde. Mostrando últimos datos guardados.');
         return;
       }
@@ -1373,7 +1373,7 @@ async function cargarPedidos() {
     } else {
       render(datosLocal);
       updateResultCount(datosLocal.length || 0, '');
-      actualizarResumenCaja(datosLocal);
+      actualizarResumenCaja(datosLocal, filtroActual);
     }
   } catch (err) {
     console.error('🚨 Error inesperado en cargarPedidos:', err);
@@ -1385,7 +1385,7 @@ async function cargarPedidos() {
       datosLocal = cachedData;
       render(datosLocal);
       updateResultCount(datosLocal.length || 0, '');
-      actualizarResumenCaja(datosLocal);
+      actualizarResumenCaja(datosLocal, filtroActual);
       ErrorHandler.mostrarWarning('⚠️ Error inesperado. Mostrando últimos datos guardados.');
       return;
     }
@@ -2426,7 +2426,7 @@ async function marcarPagoMixtoPagado(docId) {
         datosLocal[pedidoIndex].notas = notasActualizadas;
         datosLocal[pedidoIndex].metodo_pago = nuevoMetodo;
         renderizarPedidos(datosLocal);
-        actualizarResumenCaja(datosLocal);
+        actualizarResumenCaja(datosLocal, filtroActual);
       }
       return;
     }
@@ -3996,10 +3996,9 @@ function render(datosParaRenderizar){
             <div style="display:flex;align-items:center;gap:4px;">
               <span style="font-size:0.9375rem;">📞</span>
               <span class="client-phone" data-telefono="${d.telefono}" data-action="call" style="cursor:pointer;font-size:0.9375rem;padding:2px 5px;">${d.telefono}</span>
-              <a href="https://wa.me/56${d.telefono.replace(/\D/g, '')}?text=Hola%20👋,%20somos%20Sabrofood%20🐶🐱%0AQueremos%20avisarte%20que%20tu%20pedido%20ya%20está%20listo%20y%20estamos%20próximos%20a%20realizar%20la%20entrega%20🚚%0A¿Te%20encuentras%20disponible%20para%20recibirlo?%0A¡Quedamos%20atentos!" 
-                 target="_blank" 
+              <a href="https://api.whatsapp.com/send?phone=56${d.telefono.replace(/\D/g, '')}&text=Hola%20👋,%20somos%20Sabrofood%20🐶🐱%0AQueremos%20avisarte%20que%20tu%20pedido%20ya%20está%20listo%20y%20estamos%20próximos%20a%20realizar%20la%20entrega%20🚚%0A¿Te%20encuentras%20disponible%20para%20recibirlo?%0A¡Quedamos%20atentos!" 
                  style="display:inline-flex;align-items:center;justify-content:center;background:#25d366;color:white;padding:3px;border-radius:50%;text-decoration:none;width:20px;height:20px;"
-                 title="WhatsApp">
+                 title="Abrir WhatsApp">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
                   <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
                 </svg>
@@ -4302,7 +4301,7 @@ function render(datosParaRenderizar){
   });
   
   // Actualizar resumen de caja después de renderizar
-  actualizarResumenCaja(datosParaRenderizar);
+  actualizarResumenCaja(datosLocal, filtroActual);
 }
 
 // Contador de resultados
@@ -4576,8 +4575,8 @@ function aplicarFiltroFecha(tipoFiltro) {
   render(resultados);
   updateResultCount(resultados.length, descripcionFiltro);
   
-  // Actualizar resumen de caja con los datos filtrados
-  actualizarResumenCaja(resultados);
+  // Actualizar resumen de caja con el filtro seleccionado
+  actualizarResumenCaja(datosLocal, tipoFiltro);
 }
 
 // Función para filtrar por fecha específica (cuando se usa el input date)
@@ -4600,9 +4599,9 @@ function filtrarPorFecha() {
   
   render(resultados);
   updateResultCount(resultados.length, `fecha: ${fechaFiltro}`);
-  actualizarResumenCaja(resultados);
   
-  filtroActual = 'custom';
+  filtroActual = fechaFiltro; // Guardar fecha específica
+  actualizarResumenCaja(datosLocal, fechaFiltro);
 }
 
 // Función para filtrar pedidos de hoy (mantener compatibilidad)
@@ -4819,7 +4818,7 @@ document.addEventListener('DOMContentLoaded', function() {
  * 
  * Fallback: Si no hay número en notas, asume 100% transferencia (protege al chofer)
  */
-function actualizarResumenCaja(datos = datosLocal) {
+function actualizarResumenCaja(datos = datosLocal, filtro = 'hoy') {
   let totalEfectivo = 0;
   let totalTarjetas = 0;
   let totalTransferencias = 0;
@@ -4829,10 +4828,27 @@ function actualizarResumenCaja(datos = datosLocal) {
   let cantidadTransferencias = 0;
   let cantidadPagados = 0;
   let totalVentaLocal = 0; // NUEVO: Suma de TODAS las ventas (incluye transferencias pagadas)
+  
+  // NUEVO: Contadores para Pagos Mixtos
+  let totalMixtos = 0;
+  let totalMixtosPendientes = 0;
+  let totalMixtosPagados = 0;
+  let cantidadMixtosPendientes = 0;
+  let cantidadMixtosPagados = 0;
+  let efectivoEnMixtos = 0; // Efectivo dentro de pagos mixtos
+  let transferenciaEnMixtos = 0; // Transferencias dentro de pagos mixtos
+
+  // Obtener rango de fechas según filtro
+  const { desde, hasta } = obtenerRangoFechas(filtro);
 
   datos.forEach((pedido) => {
     // Solo contar pedidos entregados Y NO anulados
     if (pedido.entregado && pedido.estado !== 'ANULADO') {
+      // IMPORTANTE: Filtrar por FECHA DE ENTREGA (no created_at)
+      // La recaudación se cuenta cuando el pedido se entrega
+      const fechaPedido = new Date(pedido.fecha + 'T00:00:00');
+      if (fechaPedido < desde || fechaPedido >= hasta) return;
+      
       const metodo = pedido.metodo_pago || pedido.metodo || 'E';
       
       // Compatibilidad: intentar obtener el total de diferentes campos
@@ -4864,27 +4880,28 @@ function actualizarResumenCaja(datos = datosLocal) {
           
           if (match) {
             const montoEfectivo = parseInt(match[1].replace(/[,\.]/g, '')) || 0;
+            const montoTransferencia = total - montoEfectivo;
             
-            // Dinero Repartidor: +efectivo
+            // NUEVO: Contabilizar como PAGO MIXTO (NO entra a efectivo ni transferencias)
+            totalMixtosPendientes += total;
+            cantidadMixtosPendientes++;
+            efectivoEnMixtos += montoEfectivo;
+            transferenciaEnMixtos += montoTransferencia;
+            
+            // Para Total a Rendir: suma el efectivo físico
             totalEfectivo += montoEfectivo;
-            cantidadEfectivo++;
             
             // Venta Local: +efectivo (NO suma transferencia porque está pendiente)
             totalVentaLocal += montoEfectivo;
             
-            // Registrar resto como transferencia pendiente (visual, no suma a nada)
-            const montoTransferencia = total - montoEfectivo;
-            if (montoTransferencia > 0) {
-              totalTransferencias += montoTransferencia;
-              cantidadTransferencias++;
-            }
-            
-            console.log(`📝 Pago Mixto PENDIENTE: $${montoEfectivo} efectivo (confirmado) + $${montoTransferencia} transf (pendiente) | Total pedido: $${total}`);
+            console.log(`📝 Pago Mixto PENDIENTE: $${montoEfectivo} efectivo + $${montoTransferencia} transf (pendiente) | Total: $${total}`);
           } else {
             // FALLBACK: Sin número en notas, asumir 100% transferencia pendiente
             console.warn(`⚠️ Pago Mixto Pendiente sin monto. Asumiendo todo transferencia. Notas: "${notas}"`);
-            totalTransferencias += total;
-            cantidadTransferencias++;
+            
+            totalMixtosPendientes += total;
+            cantidadMixtosPendientes++;
+            transferenciaEnMixtos += total;
             // NO suma a Venta Local (pendiente de confirmar)
             
             if (!window.alertaPagoMixtoPendienteMostrada) {
@@ -4906,27 +4923,28 @@ function actualizarResumenCaja(datos = datosLocal) {
           
           if (match) {
             const montoEfectivo = parseInt(match[1].replace(/[,\.]/g, '')) || 0;
+            const montoTransferencia = total - montoEfectivo;
             
-            // Dinero Repartidor: +efectivo (solo lo físico)
+            // NUEVO: Contabilizar como PAGO MIXTO (NO entra a efectivo ni pagados)
+            totalMixtosPagados += total;
+            cantidadMixtosPagados++;
+            efectivoEnMixtos += montoEfectivo;
+            transferenciaEnMixtos += montoTransferencia;
+            
+            // Para Total a Rendir: suma el efectivo físico
             totalEfectivo += montoEfectivo;
-            cantidadEfectivo++;
             
             // Venta Local: +TOTAL COMPLETO (efectivo + transferencia confirmada)
             totalVentaLocal += total;
             
-            // Registrar transferencia en la categoría de pagados
-            const montoTransferencia = total - montoEfectivo;
-            if (montoTransferencia > 0) {
-              totalPagados += montoTransferencia;
-              cantidadPagados++;
-            }
-            
-            console.log(`✅ Pago Mixto PAGADO: $${montoEfectivo} efectivo (físico) + $${montoTransferencia} transf (confirmada) | Total: $${total}`);
+            console.log(`✅ Pago Mixto PAGADO: $${montoEfectivo} efectivo + $${montoTransferencia} transf (confirmada) | Total: $${total}`);
           } else {
             // FALLBACK: Sin número, asumir 100% transferencia pagada
             console.warn(`⚠️ Pago Mixto Pagado sin monto. Asumiendo todo transferencia. Notas: "${notas}"`);
-            totalPagados += total;
-            cantidadPagados++;
+            
+            totalMixtosPagados += total;
+            cantidadMixtosPagados++;
+            transferenciaEnMixtos += total;
             totalVentaLocal += total; // Suma al Total Local (ya está confirmado)
             
             if (!window.alertaPagoMixtoPagadoMostrada) {
@@ -5050,6 +5068,28 @@ function actualizarResumenCaja(datos = datosLocal) {
     cantidadPagadosEl.textContent = `${cantidadPagados} pedido${cantidadPagados !== 1 ? 's' : ''}`;
   }
   
+  // NUEVO: PAGOS MIXTOS (tarjeta separada)
+  totalMixtos = totalMixtosPendientes + totalMixtosPagados;
+  const cantidadMixtos = cantidadMixtosPendientes + cantidadMixtosPagados;
+  
+  const totalMixtosEl = document.getElementById('totalMixtos');
+  const cantidadMixtosEl = document.getElementById('cantidadMixtos');
+  const detalleEfectivoMixtosEl = document.getElementById('detalleEfectivoMixtos');
+  const detalleTransferenciaMixtosEl = document.getElementById('detalleTransferenciaMixtos');
+  
+  if (totalMixtosEl) {
+    totalMixtosEl.textContent = `$${totalMixtos.toLocaleString('es-CL')}`;
+  }
+  if (cantidadMixtosEl) {
+    cantidadMixtosEl.textContent = `${cantidadMixtos} pedido${cantidadMixtos !== 1 ? 's' : ''}`;
+  }
+  if (detalleEfectivoMixtosEl) {
+    detalleEfectivoMixtosEl.textContent = `💵 Efectivo: $${efectivoEnMixtos.toLocaleString('es-CL')}`;
+  }
+  if (detalleTransferenciaMixtosEl) {
+    detalleTransferenciaMixtosEl.textContent = `🔄 Transf: $${transferenciaEnMixtos.toLocaleString('es-CL')} (${cantidadMixtosPendientes}⏳ ${cantidadMixtosPagados}✅)`;
+  }
+  
   // TOTAL A RENDIR = Solo efectivo + tarjetas (lo que el chofer trae físicamente)
   // EXCLUYE transferencias (van al banco) y pagados (ya están en el local)
   const totalARendir = totalEfectivo + totalTarjetas;
@@ -5069,6 +5109,47 @@ function actualizarResumenCaja(datos = datosLocal) {
   const totalGeneralEl = document.getElementById('totalGeneral');
   if (totalGeneralEl) {
     totalGeneralEl.textContent = `$${totalARendir.toLocaleString('es-CL')}`;
+  }
+  
+  // NUEVO: Actualizar badge del período
+  const badgePeriodo = document.getElementById('badgePeriodoResumen');
+  if (badgePeriodo) {
+    let textoPeriodo = 'HOY';
+    let colorPeriodo = '#3b82f6'; // Azul por defecto
+    
+    switch(filtro) {
+      case 'hoy':
+        textoPeriodo = 'HOY';
+        colorPeriodo = '#3b82f6'; // Azul
+        break;
+      case 'manana':
+        textoPeriodo = 'MAÑANA';
+        colorPeriodo = '#8b5cf6'; // Púrpura
+        break;
+      case 'mes':
+        textoPeriodo = 'MES';
+        colorPeriodo = '#10b981'; // Verde
+        break;
+      case 'todo':
+        textoPeriodo = 'TODO';
+        colorPeriodo = '#6b7280'; // Gris
+        break;
+      default:
+        // Si es una fecha específica (YYYY-MM-DD)
+        if (filtro && filtro.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          const fecha = new Date(filtro + 'T00:00:00');
+          const dia = String(fecha.getDate()).padStart(2, '0');
+          const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+          textoPeriodo = `${dia}/${mes}`;
+          colorPeriodo = '#f59e0b'; // Naranja
+        } else {
+          textoPeriodo = 'HOY';
+          colorPeriodo = '#3b82f6';
+        }
+    }
+    
+    badgePeriodo.textContent = textoPeriodo;
+    badgePeriodo.style.background = colorPeriodo;
   }
 }
 
@@ -5244,9 +5325,6 @@ async function buscarHistorialPrevio(telefono) {
             🛒 ${productos}<br>
             💳 ${metodoTexto} ${pedido.entregado ? '• ✅ Entregado' : '• ⏳ Pendiente'}
           </div>
-          <button class="btn-copiar-datos-historial" onclick="copiarDatosHistorial('${pedido.nombre?.replace(/'/g, "\\'")}', '${pedido.direccion?.replace(/'/g, "\\'")}', '${pedido.metodo_pago || 'E'}')" title="Copiar nombre y dirección al formulario" type="button">
-            📋 Copiar Datos de este Pedido
-          </button>
         </div>
       `;
     });
@@ -5293,53 +5371,6 @@ function seleccionarDireccion(direccion, nombre, frecuencia) {
   // Mostrar notificación de éxito
   const mensajeFrecuencia = frecuencia > 1 ? ` (usada ${frecuencia} veces)` : ' (dirección nueva)';
   ErrorHandler.mostrarExito(`✅ Dirección seleccionada${mensajeFrecuencia}\n⚠️ VERIFICA que sea correcta para este pedido`);
-  
-  // Enfocar el campo de fecha para continuar
-  const fechaInput = document.getElementById('fechaEntrega');
-  if (fechaInput) {
-    setTimeout(() => fechaInput.focus(), 300);
-  }
-}
-
-/**
- * Copiar datos de un pedido del historial al formulario actual
- * @param {string} nombre - Nombre del cliente
- * @param {string} direccion - Dirección del cliente
- * @param {string} metodoPago - Método de pago del pedido anterior
- */
-function copiarDatosHistorial(nombre, direccion, metodoPago) {
-  // Copiar nombre
-  const nombreInput = document.getElementById('nombre');
-  if (nombreInput && nombre) {
-    nombreInput.value = nombre;
-    resaltarCampoAutocompletado(nombreInput);
-  }
-  
-  // Copiar dirección
-  const direccionInput = document.getElementById('direccion');
-  if (direccionInput && direccion) {
-    direccionInput.value = direccion;
-    resaltarCampoAutocompletado(direccionInput);
-  }
-  
-  // NO copiar método de pago - El operador debe seleccionarlo manualmente
-  // para evitar errores al marcar pedidos como "Pagados" por defecto
-  const metodoPagoSelect = document.getElementById('metodoPago');
-  if (metodoPagoSelect) {
-    metodoPagoSelect.value = ''; // Resetear a la opción por defecto
-  }
-  
-  // Mostrar checkbox de confirmación
-  mostrarCheckboxConfirmacion();
-  
-  // Desmarcar el checkbox para forzar confirmación
-  const checkbox = document.getElementById('checkboxConfirmacionDireccion');
-  if (checkbox) {
-    checkbox.checked = false;
-  }
-  
-  // Mostrar notificación de advertencia
-  ErrorHandler.mostrarExito('📋 Datos copiados: Nombre y Dirección\n⚠️ CONFIRMA que la dirección sea correcta');
   
   // Enfocar el campo de fecha para continuar
   const fechaInput = document.getElementById('fechaEntrega');
@@ -5474,9 +5505,18 @@ function extraerCantidadProducto(textoProducto) {
 function normalizarNombreProducto(nombre) {
   return nombre
     .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .replace(/\(.*?\)/g, '') // Remover paréntesis
-    .trim();
+    .replace(/[^a-z0-9]/g, '_') // Reemplazar caracteres especiales por guión bajo
+    .replace(/_+/g, '_') // Evitar múltiples guiones bajos consecutivos
+    .replace(/^_|_$/g, ''); // Remover guiones bajos al inicio/final
+}
+
+// Normalizar ID de pedido para uso en HTML
+function normalizarPedidoId(pedidoId) {
+  if (!pedidoId) return 'sin_id';
+  return String(pedidoId)
+    .replace(/[^a-zA-Z0-9]/g, '_') // Reemplazar caracteres especiales
+    .replace(/_+/g, '_') // Evitar múltiples guiones bajos
+    .replace(/^_|_$/g, ''); // Limpiar inicio/final
 }
 
 /**
@@ -5520,8 +5560,8 @@ function generarResumenCarga() {
         cliente: nombreCliente,
         pedidoId: pedidoId,
         productoId: productoId, // ⚡ INCLUIR PARA DESCUENTO DE STOCK
-        // ID único para checkbox: pedido + producto
-        checkboxId: `chk_pedido${pedidoId}_${normalizarNombreProducto(nombreProducto)}`
+        // ID único para checkbox: pedido + producto (con caracteres válidos para HTML)
+        checkboxId: `chk_${normalizarPedidoId(pedidoId)}_${normalizarNombreProducto(nombreProducto)}`
       });
     }
   }
@@ -5580,6 +5620,8 @@ async function mostrarModalCarga() {
   
   // Cargar items marcados desde Supabase ANTES de renderizar
   const itemsMarcados = await cargarItemsMarcados();
+  console.log('🔍 ITEMS MARCADOS CARGADOS:', itemsMarcados.size, 'items');
+  console.log('🔍 IDs cargados:', Array.from(itemsMarcados));
   
   // Generar contenido en el siguiente frame para no bloquear
   requestAnimationFrame(() => {
@@ -5632,6 +5674,8 @@ async function mostrarModalCarga() {
         const checked = estaMarcado ? 'checked' : '';
         const checkedClass = estaMarcado ? ' checked' : '';
         
+        console.log(`🔍 Renderizando: ${checkboxId} | Marcado: ${estaMarcado} | Producto: ${item.nombre}`);
+        
         // Mostrar producto grande y cliente pequeño debajo
         // Para productos granel, mostrar cantidad como monto ($3000)
         const esGranel = item.nombre.toLowerCase().includes('(granel)');
@@ -5644,7 +5688,7 @@ async function mostrarModalCarga() {
                data-cantidad="${item.cantidad}"
                data-nombre="${item.nombre}"
                data-pedido-id="${item.pedidoId}">
-            <input type="checkbox" class="checkbox-carga" id="${checkboxId}" ${checked}>
+            <input type="checkbox" class="checkbox-carga" id="${checkboxId}" ${checked} data-checkbox-id="${checkboxId}">
             <label for="${checkboxId}" class="item-texto">
               <div class="item-producto-nombre">${item.nombre}</div>
               <div class="item-cliente-nombre">Para: ${item.cliente}</div>
@@ -5880,17 +5924,25 @@ async function agregarItemMarcado(checkboxId, itemInfo = null) {
       return;
     }
     
-    // ⚡ DESCUENTO DE STOCK: Si hay producto_id, descontar stock
+    console.log('✅ Item guardado en carga_marcados exitosamente');
+    
+    // ⚡ DESCUENTO DE STOCK: Si hay producto_id, descontar stock (error no es crítico)
     if (itemInfo && itemInfo.productoId) {
-      console.log('✅ Item tiene producto_id - Procediendo a descontar stock');
-      await descontarStockItem(itemInfo);
+      console.log('⏳ Intentando descontar stock...');
+      try {
+        await descontarStockItem(itemInfo);
+      } catch (stockError) {
+        console.warn('⚠️ No se pudo descontar stock, pero el item quedó marcado:', stockError);
+        // NO bloqueamos el flujo - el checkbox ya está guardado
+      }
     } else if (itemInfo) {
       console.warn('⚠️ Item sin producto_id - No se descuenta stock (producto manual o antiguo)');
     }
     
   } catch (e) {
-    console.error('Error al marcar item:', e);
+    console.error('❌ Error CRÍTICO al guardar en carga_marcados:', e);
     itemsMarcadosCache.delete(checkboxId);
+    throw e; // Re-lanzar para que handleCheckboxChange lo maneje
   }
 }
 
@@ -5900,24 +5952,43 @@ async function agregarItemMarcado(checkboxId, itemInfo = null) {
  */
 async function descontarStockItem(itemInfo) {
   try {
-    console.log(`🔄 Descontando stock de "${itemInfo.nombre}" (${itemInfo.cantidad} unid.)`);
+    console.log(`🔄 Intentando descontar stock de "${itemInfo.nombre}" (${itemInfo.cantidad} unid.)...`);
+    
+    // Validar que productoId existe
+    if (!itemInfo.productoId || itemInfo.productoId <= 0) {
+      console.warn(`⚠️ producto_id inválido (${itemInfo.productoId}), omitiendo descuento de stock`);
+      return;
+    }
     
     // Obtener stock actual
     const { data: producto, error: errorGet } = await supabase_client
       .from('productos')
       .select('stock, nombre')
       .eq('id', itemInfo.productoId)
-      .single();
+      .maybeSingle(); // maybeSingle() no lanza error si no existe
     
     if (errorGet) {
-      console.error(`❌ Error obteniendo producto ${itemInfo.productoId}:`, errorGet);
+      console.error(`❌ Error al consultar producto ${itemInfo.productoId}:`, errorGet);
+      console.warn('⚠️ El checkbox se guardó pero no se pudo verificar el stock');
+      console.warn('   Verifica las políticas RLS de la tabla "productos"');
+      return;
+    }
+    
+    if (!producto) {
+      console.warn(`⚠️ Producto ID ${itemInfo.productoId} no existe en la tabla "productos"`);
+      console.warn('   El checkbox se guardó correctamente, pero no hay stock que descontar');
       return;
     }
     
     const stockAnterior = Math.floor(producto.stock || 0);
     const nuevoStock = stockAnterior - itemInfo.cantidad;
     
-    console.log(`   Stock anterior: ${stockAnterior}, Nuevo stock: ${nuevoStock}`);
+    console.log(`   Stock: ${stockAnterior} → ${nuevoStock}`);
+    
+    // Advertencia si quedará negativo
+    if (nuevoStock < 0) {
+      console.warn(`⚠️ ADVERTENCIA: Stock quedará negativo (${nuevoStock}). Descontando igual...`);
+    }
     
     // Actualizar stock
     const { error: errorUpdate } = await supabase_client
@@ -5927,11 +5998,13 @@ async function descontarStockItem(itemInfo) {
     
     if (errorUpdate) {
       console.error(`❌ Error actualizando stock:`, errorUpdate);
+      console.error('   Detalles:', JSON.stringify(errorUpdate, null, 2));
+      console.warn('⚠️ El checkbox se guardó pero el stock NO se descontó');
       return;
     }
     
-    // Registrar movimiento
-    await supabase_client
+    // Registrar movimiento (si falla, solo warning)
+    const { error: errorMov } = await supabase_client
       .from('movimientos_stock')
       .insert([{
         producto_id: itemInfo.productoId,
@@ -5944,10 +6017,16 @@ async function descontarStockItem(itemInfo) {
         motivo: `Bulto cargado para reparto`
       }]);
     
-    console.log(`✅ Stock descontado: ${itemInfo.nombre} (${stockAnterior} → ${nuevoStock})`);
+    if (errorMov) {
+      console.warn('⚠️ Stock descontado pero no se registró en historial:', errorMov);
+    }
+    
+    console.log(`✅ Stock descontado exitosamente: ${itemInfo.nombre} (${stockAnterior} → ${nuevoStock})`);
     
   } catch (error) {
-    console.error('❌ Error en descontarStockItem:', error);
+    console.error('❌ Excepción en descontarStockItem:', error);
+    console.warn('⚠️ El checkbox se guardó pero hubo un problema con el stock');
+    // No re-lanzamos el error para no bloquear el guardado del checkbox
   }
 }
 
@@ -5980,6 +6059,7 @@ async function devolverStockItem(checkboxId) {
     
     if (errorGet) {
       console.error(`❌ Error obteniendo producto:`, errorGet);
+      console.warn('⚠️ El item fue desmarcado pero no se pudo devolver stock');
       return;
     }
     
@@ -5987,10 +6067,16 @@ async function devolverStockItem(checkboxId) {
     const nuevoStock = stockAnterior + data.cantidad;
     
     // Actualizar stock
-    await supabase_client
+    const { error: errorUpdate } = await supabase_client
       .from('productos')
       .update({ stock: nuevoStock })
       .eq('id', data.producto_id);
+    
+    if (errorUpdate) {
+      console.error(`❌ Error devolviendo stock:`, errorUpdate);
+      console.warn('⚠️ Verifica permisos RLS en la tabla productos');
+      return;
+    }
     
     // 🗑️ ELIMINAR el movimiento de stock original (SALIDA) en vez de crear DEVOLUCION
     console.log(`🗑️ Eliminando movimiento de stock del historial...`);
@@ -6003,15 +6089,14 @@ async function devolverStockItem(checkboxId) {
       .eq('cantidad', data.cantidad);
     
     if (errorDelete) {
-      console.error('❌ Error eliminando movimiento:', errorDelete);
-    } else {
-      console.log(`✅ Movimiento eliminado del historial`);
+      console.warn('⚠️ No se pudo eliminar movimiento (no crítico):', errorDelete);
     }
     
     console.log(`✅ Stock devuelto: ${data.nombre_producto} (${stockAnterior} → ${nuevoStock})`);
     
-  } catch (error) {
-    console.error('❌ Error en devolverStockItem:', error);
+  } catch (e) {
+    console.error('❌ Error en devolverStockItem:', e);
+    console.warn('⚠️ El item fue desmarcado pero hubo un problema con el stock');
   }
 }
 
@@ -6121,8 +6206,12 @@ async function devolverStockItemsMarcados(pedidoId, pedido = null) {
  */
 async function eliminarItemMarcado(checkboxId) {
   try {
-    // Primero devolver el stock ANTES de borrar el registro
-    await devolverStockItem(checkboxId);
+    // Intentar devolver el stock (no es crítico si falla)
+    try {
+      await devolverStockItem(checkboxId);
+    } catch (stockError) {
+      console.warn('⚠️ Error devolviendo stock, pero continuando con desmarcado:', stockError);
+    }
     
     itemsMarcadosCache.delete(checkboxId);
     
@@ -6132,12 +6221,17 @@ async function eliminarItemMarcado(checkboxId) {
       .eq('checkbox_id', checkboxId);
     
     if (error) {
-      console.error('Error al desmarcar item:', error);
+      console.error('❌ Error al eliminar de carga_marcados:', error);
       itemsMarcadosCache.add(checkboxId);
+      throw error;
     }
+    
+    console.log('✅ Item desmarcado exitosamente');
+    
   } catch (e) {
-    console.error('Error al desmarcar item:', e);
+    console.error('❌ Error CRÍTICO al desmarcar item:', e);
     itemsMarcadosCache.add(checkboxId);
+    throw e;
   }
 }
 
@@ -6744,7 +6838,7 @@ function filtrarPedidosModal(filtro) {
 
 /**
  * Obtener rango de fechas según filtro
- * @param {string} filtro - 'hoy', 'semana', 'mes', 'todo'
+ * @param {string} filtro - 'hoy', 'manana', 'semana', 'mes', 'todo', 'custom', o fecha específica 'YYYY-MM-DD'
  * @returns {Object} {desde, hasta}
  */
 function obtenerRangoFechas(filtro) {
@@ -6757,6 +6851,11 @@ function obtenerRangoFechas(filtro) {
   switch(filtro) {
     case 'hoy':
       return { desde: hoy, hasta: manana };
+    
+    case 'manana':
+      const pasadoManana = new Date(manana);
+      pasadoManana.setDate(manana.getDate() + 1);
+      return { desde: manana, hasta: pasadoManana };
       
     case 'semana':
       const inicioSemana = new Date(hoy);
@@ -6771,7 +6870,18 @@ function obtenerRangoFechas(filtro) {
       return { desde: inicioMes, hasta: finMes };
       
     case 'todo':
+      return { desde: new Date(0), hasta: new Date('2099-12-31') };
+    
+    case 'custom':
     default:
+      // Si es una fecha específica en formato YYYY-MM-DD
+      if (filtro && filtro.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const fechaEspecifica = new Date(filtro + 'T00:00:00');
+        const siguienteDia = new Date(fechaEspecifica);
+        siguienteDia.setDate(fechaEspecifica.getDate() + 1);
+        return { desde: fechaEspecifica, hasta: siguienteDia };
+      }
+      // Por defecto, retornar todo
       return { desde: new Date(0), hasta: new Date('2099-12-31') };
   }
 }
@@ -6782,6 +6892,10 @@ function obtenerRangoFechas(filtro) {
  */
 function mostrarPedidosPorMetodo(tipo) {
   modalMetodoPagoTipo = tipo; // Guardar tipo actual
+  
+  // NUEVO: Sincronizar filtro del modal con el filtro actual de la vista principal
+  modalMetodoPagoFiltro = filtroActual;
+  
   const modal = document.getElementById('modalMetodoPago');
   const icono = document.getElementById('modalMetodoPagoIcono');
   const nombre = document.getElementById('modalMetodoPagoNombre');
@@ -6801,6 +6915,11 @@ function mostrarPedidosPorMetodo(tipo) {
       nombre: 'Tarjetas (Débito/Crédito)',
       metodos: ['DC', 'D', 'C']
     },
+    mixtos: {
+      icono: '💰',
+      nombre: 'Pagos Mixtos (Efectivo + Transferencia)',
+      metodos: ['PM', 'PMP']
+    },
     pendientes: {
       icono: '⏳',
       nombre: 'Transferencias Pendientes',
@@ -6819,6 +6938,26 @@ function mostrarPedidosPorMetodo(tipo) {
   icono.textContent = cfg.icono;
   nombre.textContent = cfg.nombre;
   
+  // NUEVO: Actualizar estado visual de los botones de filtro del modal
+  const botonesFiltroModal = document.querySelectorAll('.btn-filtro-modal');
+  botonesFiltroModal.forEach(btn => {
+    btn.classList.remove('active');
+    const filtroBtn = btn.getAttribute('data-filtro');
+    
+    // Mapear filtroActual a los filtros del modal
+    let filtroModalEquivalente = modalMetodoPagoFiltro;
+    
+    // Si filtroActual es 'manana' o una fecha específica, marcar 'hoy' por ahora
+    // (el modal no tiene botón para mañana o fecha específica, solo usa el filtro heredado)
+    if (modalMetodoPagoFiltro === 'manana' || modalMetodoPagoFiltro.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      filtroModalEquivalente = 'hoy'; // Los botones solo muestran hoy/semana/mes/todo
+    }
+    
+    if (filtroBtn === filtroModalEquivalente) {
+      btn.classList.add('active');
+    }
+  });
+  
   // Obtener rango de fechas según filtro
   const { desde, hasta } = obtenerRangoFechas(modalMetodoPagoFiltro);
   
@@ -6826,34 +6965,28 @@ function mostrarPedidosPorMetodo(tipo) {
   const pedidosFiltrados = datosLocal.filter(pedido => {
     if (!pedido.entregado || pedido.estado === 'ANULADO') return false;
     
-    // Filtrar por fecha (usar created_at si existe, sino fecha de entrega)
-    const fechaPedido = pedido.created_at ? new Date(pedido.created_at) : new Date(pedido.fecha);
+    // IMPORTANTE: Filtrar por FECHA DE ENTREGA (no created_at)
+    // La recaudación se cuenta cuando el pedido se entrega
+    const fechaPedido = new Date(pedido.fecha + 'T00:00:00');
     if (fechaPedido < desde || fechaPedido >= hasta) return false;
     
     const metodo = pedido.metodo_pago || 'E';
     const notas = pedido.notas || ''; // Definir notas al inicio
     
-    // Caso especial: Pago Mixto
+    // NUEVO: Caso especial para Pagos Mixtos (categoría separada)
+    if (tipo === 'mixtos') {
+      return metodo === 'PM' || metodo === 'PMP';
+    }
+    
+    // Caso especial: Pago Mixto - EXCLUIR de otras categorías
     if (metodo === 'PM' || metodo === 'PMP') {
-      // Si buscamos efectivo, incluir pagos mixtos (tienen efectivo)
-      if (tipo === 'efectivo') return true;
-      
-      // Si buscamos pendientes, incluir PM (tienen transferencia pendiente)
-      if (tipo === 'pendientes' && metodo === 'PM') return true;
-      
-      // Si buscamos pagadas, incluir PMP (tienen transferencia pagada)
-      if (tipo === 'pagadas' && metodo === 'PMP') return true;
-      
-      return false;
+      return false; // Ya no aparecen en efectivo, pendientes ni pagadas
     }
     
     // Compatibilidad con pagos mixtos antiguos (con emojis)
     if (typeof notas === 'string' && (notas.includes('💰 PAGO MIXTO:') || notas.includes('PAGO MIXTO:'))) {
-      if (tipo === 'efectivo' && notas.includes('💵 Efectivo:')) return true;
-      if (tipo === 'tarjetas' && notas.includes('💳 Tarjeta:')) return true;
-      if (tipo === 'pendientes' && notas.includes('🔄 Transferencia:')) return true;
-      if (tipo === 'pagadas' && notas.includes('✅ Transferencia PAGADA:')) return true;
-      return false;
+      if (tipo === 'mixtos') return true;
+      return false; // Excluir de otras categorías
     }
     
     // Pagos simples
@@ -6867,40 +7000,16 @@ function mostrarPedidosPorMetodo(tipo) {
     const total = parseInt(pedido.total) || 0;
     const notas = pedido.notas || '';
     
-    // Pago Mixto: calcular solo la parte correspondiente
+    // NUEVO: Pago Mixto - calcular total completo cuando tipo === 'mixtos'
     if (metodo === 'PM' || metodo === 'PMP') {
-      const patronNumero = /(\d+[\.,]?\d*)\s*(?:efectivo|efec|pesos|$)/i;
-      const match = notas.match(patronNumero);
-      
-      if (match) {
-        const montoEfectivo = parseInt(match[1].replace(/[,\.]/g, '')) || 0;
-        const montoTransferencia = total - montoEfectivo;
-        
-        if (tipo === 'efectivo') {
-          totalMonto += montoEfectivo;
-        } else if ((tipo === 'pendientes' && metodo === 'PM') || (tipo === 'pagadas' && metodo === 'PMP')) {
-          totalMonto += montoTransferencia;
-        }
-      } else {
-        // Sin monto especificado, asumir todo transferencia
-        if (tipo === 'pendientes' && metodo === 'PM') totalMonto += total;
-        if (tipo === 'pagadas' && metodo === 'PMP') totalMonto += total;
+      if (tipo === 'mixtos') {
+        totalMonto += total; // Total completo del pedido
       }
     }
     // Pagos mixtos antiguos
     else if (typeof notas === 'string' && (notas.includes('💰 PAGO MIXTO:') || notas.includes('PAGO MIXTO:'))) {
-      if (tipo === 'efectivo') {
-        const efectivoMatch = notas.match(/💵 Efectivo: \$?([\d,.]+)/);
-        if (efectivoMatch) totalMonto += parseInt(efectivoMatch[1].replace(/[,\.]/g, '')) || 0;
-      } else if (tipo === 'tarjetas') {
-        const tarjetaMatch = notas.match(/💳 Tarjeta: \$?([\d,.]+)/);
-        if (tarjetaMatch) totalMonto += parseInt(tarjetaMatch[1].replace(/[,\.]/g, '')) || 0;
-      } else if (tipo === 'pendientes') {
-        const transferenciaMatch = notas.match(/🔄 Transferencia: \$?([\d,.]+)/);
-        if (transferenciaMatch) totalMonto += parseInt(transferenciaMatch[1].replace(/[,\.]/g, '')) || 0;
-      } else if (tipo === 'pagadas') {
-        const transferenciaPagadaMatch = notas.match(/✅ Transferencia PAGADA: \$?([\d,.]+)/);
-        if (transferenciaPagadaMatch) totalMonto += parseInt(transferenciaPagadaMatch[1].replace(/[,\.]/g, '')) || 0;
+      if (tipo === 'mixtos') {
+        totalMonto += total;
       }
     }
     // Pagos simples
@@ -6931,6 +7040,7 @@ function mostrarPedidosPorMetodo(tipo) {
       let montoMostrar = total;
       let etiquetaExtra = '';
       
+      // NUEVO: Para pagos mixtos, mostrar desglose completo
       if (metodo === 'PM' || metodo === 'PMP') {
         const patronNumero = /(\d+[\.,]?\d*)\s*(?:efectivo|efec|pesos|$)/i;
         const match = notas.match(patronNumero);
@@ -6939,12 +7049,9 @@ function mostrarPedidosPorMetodo(tipo) {
           const montoEfectivo = parseInt(match[1].replace(/[,\.]/g, '')) || 0;
           const montoTransferencia = total - montoEfectivo;
           
-          if (tipo === 'efectivo') {
-            montoMostrar = montoEfectivo;
-            etiquetaExtra = ` <span style="font-size:0.75rem;color:#6b7280;">(Mixto: $${total.toLocaleString('es-CL')})</span>`;
-          } else {
-            montoMostrar = montoTransferencia;
-            etiquetaExtra = ` <span style="font-size:0.75rem;color:#6b7280;">(Mixto: $${total.toLocaleString('es-CL')})</span>`;
+          if (tipo === 'mixtos') {
+            montoMostrar = total;
+            etiquetaExtra = ` <span style="font-size:0.75rem;color:#6b7280;"><br>💵 Efectivo: $${montoEfectivo.toLocaleString('es-CL')}<br>🔄 Transf: $${montoTransferencia.toLocaleString('es-CL')} ${metodo === 'PM' ? '⏳' : '✅'}</span>`;
           }
         }
       }
@@ -6956,13 +7063,19 @@ function mostrarPedidosPorMetodo(tipo) {
       
       const productosCorto = productos.length > 60 ? productos.substring(0, 60) + '...' : productos;
       
-      // Fecha y hora de creación (usar created_at si existe, sino fecha)
-      let fechaCreacionTexto = '';
-      if (pedido.created_at) {
-        const fechaCreacion = new Date(pedido.created_at);
-        const fechaFormato = fechaCreacion.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
-        const horaFormato = fechaCreacion.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
-        fechaCreacionTexto = `🕐 ${fechaFormato} ${horaFormato}`;
+      // Fecha de entrega (la que cuenta para recaudación)
+      let fechaEntregaTexto = '';
+      if (pedido.fecha) {
+        const fechaEntrega = new Date(pedido.fecha + 'T00:00:00');
+        const fechaFormato = fechaEntrega.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        fechaEntregaTexto = `📅 Entregado: ${fechaFormato}`;
+        
+        // Si existe created_at, mostrar también la hora de creación
+        if (pedido.created_at) {
+          const fechaCreacion = new Date(pedido.created_at);
+          const horaFormato = fechaCreacion.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+          fechaEntregaTexto += ` (🕐 ${horaFormato})`;
+        }
       }
       
       listaHTML += `
@@ -6971,7 +7084,7 @@ function mostrarPedidosPorMetodo(tipo) {
             <div style="flex:1;">
               <div style="font-weight:600;font-size:0.9375rem;color:#111827;margin-bottom:2px;">${nombre}</div>
               ${telefono ? `<div style="font-size:0.8125rem;color:#2563eb;display:flex;align-items:center;gap:4px;"><span>📞</span>${telefono}</div>` : ''}
-              ${fechaCreacionTexto ? `<div style="font-size:0.75rem;color:#9ca3af;margin-top:2px;">${fechaCreacionTexto}</div>` : ''}
+              ${fechaEntregaTexto ? `<div style="font-size:0.75rem;color:#9ca3af;margin-top:2px;">${fechaEntregaTexto}</div>` : ''}
             </div>
             <div style="text-align:right;">
               <div style="font-size:1.125rem;font-weight:700;color:#059669;">$${montoMostrar.toLocaleString('es-CL')}${etiquetaExtra}</div>

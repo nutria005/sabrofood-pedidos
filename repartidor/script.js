@@ -4262,9 +4262,18 @@ function extraerCantidadProducto(textoProducto) {
 function normalizarNombreProducto(nombre) {
   return nombre
     .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .replace(/\(.*?\)/g, '') // Remover paréntesis
-    .trim();
+    .replace(/[^a-z0-9]/g, '_') // Reemplazar caracteres especiales por guión bajo
+    .replace(/_+/g, '_') // Evitar múltiples guiones bajos consecutivos
+    .replace(/^_|_$/g, ''); // Remover guiones bajos al inicio/final
+}
+
+// Normalizar ID de pedido para uso en HTML
+function normalizarPedidoId(pedidoId) {
+  if (!pedidoId) return 'sin_id';
+  return String(pedidoId)
+    .replace(/[^a-zA-Z0-9]/g, '_') // Reemplazar caracteres especiales
+    .replace(/_+/g, '_') // Evitar múltiples guiones bajos
+    .replace(/^_|_$/g, ''); // Limpiar inicio/final
 }
 
 /**
@@ -4306,8 +4315,8 @@ function generarResumenCarga() {
         cantidad: cantidad,
         cliente: nombreCliente,
         pedidoId: pedidoId,
-        // ID único para checkbox: pedido + producto
-        checkboxId: `chk_pedido${pedidoId}_${normalizarNombreProducto(nombreProducto)}`
+        // ID único para checkbox: pedido + producto (con caracteres válidos para HTML)
+        checkboxId: `chk_${normalizarPedidoId(pedidoId)}_${normalizarNombreProducto(nombreProducto)}`
       });
     }
   }
@@ -4316,7 +4325,19 @@ function generarResumenCarga() {
   // Así, productos iguales de distintos pedidos aparecen juntos visualmente
   const procesarArray = (array) => {
     const itemsOrdenados = array.sort((a, b) => a.nombre.localeCompare(b.nombre));
-    const bultos = itemsOrdenados.reduce((sum, item) => sum + item.cantidad, 0);
+    
+    // CORRECCIÓN: Productos a granel cuentan como 1 bulto, no el precio
+    const bultos = itemsOrdenados.reduce((sum, item) => {
+      const esGranel = item.nombre && (
+        item.nombre.toLowerCase().includes('(granel)') || 
+        item.nombre.toLowerCase().includes('granel')
+      );
+      
+      // Si es granel → 1 bulto (el precio está en "cantidad" pero es 1 bulto físico)
+      // Si NO es granel → usar cantidad normal
+      return sum + (esGranel ? 1 : item.cantidad);
+    }, 0);
+    
     return { items: itemsOrdenados, bultos };
   };
   
@@ -4354,6 +4375,8 @@ async function mostrarModalCarga() {
   
   // Cargar items marcados desde Supabase ANTES de renderizar
   const itemsMarcados = await cargarItemsMarcados();
+  console.log('🔍 ITEMS MARCADOS CARGADOS:', itemsMarcados.size, 'items');
+  console.log('🔍 IDs cargados:', Array.from(itemsMarcados));
   
   // Generar contenido en el siguiente frame para no bloquear
   requestAnimationFrame(() => {
@@ -4406,15 +4429,21 @@ async function mostrarModalCarga() {
         const checked = estaMarcado ? 'checked' : '';
         const checkedClass = estaMarcado ? ' checked' : '';
         
+        console.log(`🔍 Renderizando: ${checkboxId} | Marcado: ${estaMarcado} | Producto: ${item.nombre}`);
+        
         // Mostrar producto grande y cliente pequeño debajo
+        // Para productos granel, mostrar cantidad como monto ($20000)
+        const esGranel = item.nombre.toLowerCase().includes('(granel)');
+        const cantidadMostrar = esGranel ? `$${item.cantidad.toLocaleString('es-CL')}` : item.cantidad;
+        
         items += `
           <div class="item-carga${checkedClass}" data-checkbox-id="${checkboxId}">
-            <input type="checkbox" class="checkbox-carga" id="${checkboxId}" ${checked}>
+            <input type="checkbox" class="checkbox-carga" id="${checkboxId}" ${checked} onchange="toggleItemCargaCheckbox(this)">
             <label for="${checkboxId}" class="item-texto">
               <div class="item-producto-nombre">${item.nombre}</div>
               <div class="item-cliente-nombre">Para: ${item.cliente}</div>
             </label>
-            <span class="item-cantidad">${item.cantidad}</span>
+            <span class="item-cantidad">${cantidadMostrar}</span>
           </div>`;
         idx++;
       }
@@ -4429,36 +4458,40 @@ async function mostrarModalCarga() {
     // Single DOM write
     modalBody.innerHTML = html;
     totalBultosEl.textContent = totalBultos;
-    
-    // Event delegation - UN SOLO listener
-    modalBody.removeEventListener('change', handleCheckboxChange);
-    modalBody.addEventListener('change', handleCheckboxChange);
   }
   });
 }
 
 /**
- * MEJORA 4: Handler con persistencia
- * Guarda/elimina items marcados en localStorage usando ID único (pedido + producto)
+ * MEJORA 4: Toggle item con onchange directo en el checkbox
+ * Guarda/elimina items marcados en Supabase usando ID único (pedido + producto)
+ * @param {HTMLInputElement} checkbox - El checkbox que cambió
  */
-function handleCheckboxChange(event) {
-  if (event.target.classList.contains('checkbox-carga')) {
-    const itemCarga = event.target.closest('.item-carga');
-    if (itemCarga) {
-      const checkboxId = itemCarga.dataset.checkboxId;
-      const checked = event.target.checked;
-      
-      // Actualizar UI
-      itemCarga.classList.toggle('checked', checked);
-      
-      // Actualizar localStorage usando el ID único
-      if (checked) {
-        agregarItemMarcado(checkboxId);
-      } else {
-        eliminarItemMarcado(checkboxId);
-      }
-    }
+function toggleItemCargaCheckbox(checkbox) {
+  const itemCarga = checkbox.closest('.item-carga');
+  if (!itemCarga) return;
+  
+  const checkboxId = itemCarga.dataset.checkboxId;
+  const checked = checkbox.checked;
+  
+  console.log(`🔄 Toggle checkbox: ${checkboxId} -> ${checked ? 'MARCADO' : 'DESMARCADO'}`);
+  
+  // Actualizar UI
+  itemCarga.classList.toggle('checked', checked);
+  
+  // Persistir en Supabase usando el ID único
+  if (checked) {
+    agregarItemMarcado(checkboxId);
+  } else {
+    eliminarItemMarcado(checkboxId);
   }
+}
+
+/**
+ * DEPRECATED: Antigua función toggleItemCarga (mantener por compatibilidad)
+ */
+function toggleItemCarga(itemCarga, event) {
+  console.warn('⚠️ toggleItemCarga está deprecated, usa toggleItemCargaCheckbox');
 }
 
 /**
@@ -4466,12 +4499,6 @@ function handleCheckboxChange(event) {
  */
 function cerrarModalCarga() {
   const modal = document.getElementById('modalCarga');
-  const modalBody = document.getElementById('modalCargaBody');
-  
-  // Limpiar event listener
-  if (modalBody) {
-    modalBody.removeEventListener('change', handleCheckboxChange);
-  }
   
   modal.style.display = 'none';
   modal.setAttribute('aria-hidden', 'true');
@@ -4579,26 +4606,30 @@ let itemsMarcadosCache = new Set();
  */
 async function cargarItemsMarcados() {
   try {
+    console.log('📥 Cargando items marcados desde Supabase...');
     const client = getSupabaseClient();
     if (!client) {
-      console.error('❌ Cliente no disponible para cargar items');
+      console.error('❌ Cliente Supabase no disponible para cargar items');
       return itemsMarcadosCache;
     }
     
     const { data, error } = await client
       .from('carga_marcados')
-      .select('checkbox_id')
+      .select('checkbox_id, marcado, updated_at')
       .eq('marcado', true);
     
     if (error) {
-      console.error('Error al cargar items marcados:', error);
+      console.error('❌ Error al cargar items marcados:', error);
+      console.error('Detalles del error:', JSON.stringify(error, null, 2));
+      alert(`Error al cargar items marcados: ${error.message}\n\n¿Existe la tabla carga_marcados en Supabase?\n¿Tienes permisos de lectura?`);
       return itemsMarcadosCache;
     }
     
     itemsMarcadosCache = new Set(data.map(item => item.checkbox_id));
+    console.log(`✅ Cargados ${itemsMarcadosCache.size} items marcados:`, Array.from(itemsMarcadosCache));
     return itemsMarcadosCache;
   } catch (e) {
-    console.error('Error al cargar items marcados:', e);
+    console.error('❌ Excepción al cargar items marcados:', e);
     return itemsMarcadosCache;
   }
 }
@@ -4609,15 +4640,16 @@ async function cargarItemsMarcados() {
  */
 async function agregarItemMarcado(checkboxId) {
   try {
+    console.log(`✅ Guardando en Supabase: ${checkboxId}`);
     itemsMarcadosCache.add(checkboxId);
     
     const client = getSupabaseClient();
     if (!client) {
-      console.error('❌ Cliente no disponible');
+      console.error('❌ Cliente Supabase no disponible');
       return;
     }
     
-    const { error } = await client
+    const { data, error } = await client
       .from('carga_marcados')
       .upsert({ 
         checkbox_id: checkboxId, 
@@ -4625,14 +4657,19 @@ async function agregarItemMarcado(checkboxId) {
         updated_at: new Date().toISOString()
       }, { 
         onConflict: 'checkbox_id' 
-      });
+      })
+      .select();
     
     if (error) {
-      console.error('Error al marcar item:', error);
+      console.error('❌ Error al marcar item en Supabase:', error);
+      console.error('Detalles del error:', JSON.stringify(error, null, 2));
       itemsMarcadosCache.delete(checkboxId);
+      alert(`Error al guardar: ${error.message}\n\nVerifica las políticas de la tabla carga_marcados en Supabase.`);
+    } else {
+      console.log('✅ Item guardado exitosamente:', data);
     }
   } catch (e) {
-    console.error('Error al marcar item:', e);
+    console.error('❌ Excepción al marcar item:', e);
     itemsMarcadosCache.delete(checkboxId);
   }
 }
@@ -4643,25 +4680,31 @@ async function agregarItemMarcado(checkboxId) {
  */
 async function eliminarItemMarcado(checkboxId) {
   try {
+    console.log(`❌ Eliminando de Supabase: ${checkboxId}`);
     itemsMarcadosCache.delete(checkboxId);
     
     const client = getSupabaseClient();
     if (!client) {
-      console.error('❌ Cliente no disponible');
+      console.error('❌ Cliente Supabase no disponible');
       return;
     }
     
-    const { error } = await client
+    const { data, error } = await client
       .from('carga_marcados')
       .delete()
-      .eq('checkbox_id', checkboxId);
+      .eq('checkbox_id', checkboxId)
+      .select();
     
     if (error) {
-      console.error('Error al desmarcar item:', error);
+      console.error('❌ Error al desmarcar item en Supabase:', error);
+      console.error('Detalles del error:', JSON.stringify(error, null, 2));
       itemsMarcadosCache.add(checkboxId);
+      alert(`Error al eliminar: ${error.message}\n\nVerifica las políticas de la tabla carga_marcados en Supabase.`);
+    } else {
+      console.log('✅ Item eliminado exitosamente:', data);
     }
   } catch (e) {
-    console.error('Error al desmarcar item:', e);
+    console.error('❌ Excepción al desmarcar item:', e);
     itemsMarcadosCache.add(checkboxId);
   }
 }

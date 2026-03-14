@@ -10,7 +10,19 @@ let supabase_shared = null;
 
 function inicializarSupabase() {
   if (typeof window.supabase !== 'undefined' && !supabase_shared) {
-    supabase_shared = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+    // Configuración para evitar problemas con Tracking Prevention
+    const options = {
+      auth: {
+        persistSession: true,
+        storageKey: 'sabrofood-auth',
+        storage: window.localStorage,
+        // Fallback si localStorage falla
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
+    };
+    
+    supabase_shared = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, options);
     console.log('✅ Cliente Supabase inicializado desde shared/supabase-config.js');
   }
   return supabase_shared;

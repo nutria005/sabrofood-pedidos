@@ -25,7 +25,7 @@
     // Verificar autenticación antes de cargar la página
     verificarAutenticacionYRedirigir('/repatosabrofood/index.html');
   </script>
-  <script src="script.js?v=20251217" defer></script>
+  <script src="script.js?v=20260228001" defer></script>
 </head>
 <body>
   <div class="wrap">
@@ -81,7 +81,10 @@
             <div class="total-card-content">
               <span class="total-icon">💰</span>
               <div>
-                <small class="total-card-label">Total Recaudado</small>
+                <small class="total-card-label">
+                  Total Recaudado 
+                  <span id="badgePeriodoResumen" style="background: #3b82f6; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: 700; margin-left: 4px;">HOY</span>
+                </small>
                 <strong class="total-card-valor" id="totalRendir">$0</strong>
               </div>
             </div>
@@ -100,7 +103,8 @@
         
         <!-- Grid Métodos de Pago Compacto -->
         <div class="resumen-grid-compact">
-          <div class="resumen-mini efectivo">
+          <!-- Efectivo -->
+          <div class="resumen-mini efectivo" onclick="mostrarPedidosPorMetodo('efectivo')" style="cursor: pointer;">
             <div class="resumen-mini-header">
               <span class="mini-icon">💵</span>
               <span class="mini-label">Efectivo</span>
@@ -109,7 +113,8 @@
             <small class="resumen-mini-detalle" id="cantidadEfectivo">0 pedidos</small>
           </div>
           
-          <div class="resumen-mini tarjetas">
+          <!-- Tarjetas -->
+          <div class="resumen-mini tarjetas" onclick="mostrarPedidosPorMetodo('tarjetas')" style="cursor: pointer;">
             <div class="resumen-mini-header">
               <span class="mini-icon">💳</span>
               <span class="mini-label">Tarjetas</span>
@@ -118,22 +123,46 @@
             <small class="resumen-mini-detalle" id="cantidadTarjetas">0 pedidos</small>
           </div>
           
-          <div class="resumen-mini transferencias">
+          <!-- NUEVO: Pagos Mixtos -->
+          <div class="resumen-mini mixtos" onclick="mostrarPedidosPorMetodo('mixtos')" style="cursor: pointer;">
             <div class="resumen-mini-header">
-              <span class="mini-icon">⏳</span>
-              <span class="mini-label">Pendientes</span>
+              <span class="mini-icon">💰</span>
+              <span class="mini-label">Pago Mixto</span>
             </div>
-            <div class="resumen-mini-valor" id="totalTransferencias">$0</div>
-            <small class="resumen-mini-detalle" id="cantidadTransferencias">0 pedidos</small>
+            <div class="resumen-mini-valor" id="totalMixtos">$0</div>
+            <small class="resumen-mini-detalle" id="cantidadMixtos">0 pedidos</small>
+            <small class="resumen-mini-detalle" id="detalleEfectivoMixtos" style="display: block; margin-top: 2px;">💵 Efectivo: $0</small>
+            <small class="resumen-mini-detalle" id="detalleTransferenciaMixtos" style="display: block;">🔄 Transf: $0</small>
           </div>
           
-          <div class="resumen-mini pagados">
-            <div class="resumen-mini-header">
-              <span class="mini-icon">✅</span>
-              <span class="mini-label">Pagadas</span>
+          <!-- Transferencias (Contenedor) -->
+          <div class="resumen-transferencias-container">
+            <div class="resumen-transferencias-header">
+              <span class="mini-icon">🏦</span>
+              <span class="mini-label">Transferencias</span>
             </div>
-            <div class="resumen-mini-valor" id="totalPagados">$0</div>
-            <small class="resumen-mini-detalle" id="cantidadPagados">0 pedidos</small>
+            
+            <div class="resumen-transferencias-grid">
+              <!-- Pendientes -->
+              <div class="resumen-mini-sub transferencias" onclick="mostrarPedidosPorMetodo('pendientes')" style="cursor: pointer;">
+                <div class="resumen-mini-header">
+                  <span class="mini-icon-sub">⏳</span>
+                  <span class="mini-label-sub">Pendientes</span>
+                </div>
+                <div class="resumen-mini-valor-sub" id="totalTransferencias">$0</div>
+                <small class="resumen-mini-detalle-sub" id="cantidadTransferencias">0 pedidos</small>
+              </div>
+              
+              <!-- Pagadas -->
+              <div class="resumen-mini-sub pagados" onclick="mostrarPedidosPorMetodo('pagadas')" style="cursor: pointer;">
+                <div class="resumen-mini-header">
+                  <span class="mini-icon-sub">✅</span>
+                  <span class="mini-label-sub">Pagadas</span>
+                </div>
+                <div class="resumen-mini-valor-sub" id="totalPagados">$0</div>
+                <small class="resumen-mini-detalle-sub" id="cantidadPagados">0 pedidos</small>
+              </div>
+            </div>
           </div>
         </div>
       </div>

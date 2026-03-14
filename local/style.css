@@ -2024,6 +2024,11 @@ header {
   border-left-width: 4px;
 }
 
+.resumen-mini.mixtos {
+  border-left-color: #a855f7;
+  border-left-width: 4px;
+}
+
 .resumen-mini-header {
   display: flex;
   align-items: center;
@@ -2052,6 +2057,91 @@ header {
 
 .resumen-mini-detalle {
   font-size: 0.7rem;
+  color: #9ca3af;
+  display: block;
+}
+
+/* Contenedor de Transferencias */
+.resumen-transferencias-container {
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  border: 2px solid #e5e7eb;
+}
+
+.resumen-transferencias-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.resumen-transferencias-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.resumen-mini-sub {
+  background: #f9fafb;
+  padding: 8px;
+  border-radius: 6px;
+  border: 2px solid #e5e7eb;
+  transition: all 0.2s;
+  cursor: pointer;
+  user-select: none;
+}
+
+.resumen-mini-sub:hover {
+  transform: scale(1.03);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: white;
+}
+
+.resumen-mini-sub:active {
+  transform: scale(0.98);
+}
+
+.resumen-mini-sub.transferencias {
+  border-left-color: #f59e0b;
+  border-left-width: 4px;
+}
+
+.resumen-mini-sub.pagados {
+  border-left-color: #10b981;
+  border-left-width: 4px;
+}
+
+.resumen-mini-sub-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+
+.mini-icon-sub {
+  font-size: 0.95rem;
+}
+
+.mini-label-sub {
+  font-size: 0.65rem;
+  color: #6b7280;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.resumen-mini-valor-sub {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #111827;
+  margin-bottom: 2px;
+}
+
+.resumen-mini-detalle-sub {
+  font-size: 0.65rem;
   color: #9ca3af;
   display: block;
 }

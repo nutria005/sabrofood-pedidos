@@ -805,48 +805,77 @@
       cerrarBannerActualizacion();
     }
 
-    // Registrar Service Worker para PWA
+    // ===================================
+    // 🚀 REGISTRO DEL SERVICE WORKER
+    // ===================================
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./service-worker.js')
-          .then((registration) => {
-            console.log('✅ Service Worker registrado correctamente:', registration.scope);
-            
-            // Manejar actualizaciones del Service Worker
-            registration.addEventListener('updatefound', () => {
-              newServiceWorker = registration.installing;
-              
-              newServiceWorker.addEventListener('statechange', () => {
-                if (newServiceWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                  // Nueva versión disponible
-                  console.log('🔄 Nueva versión disponible');
-                  // Mostrar banner de actualización
-                  mostrarBannerActualizacion();
-                }
-              });
-            });
-            
-            // Verificar actualizaciones cada 30 segundos
-            setInterval(() => {
-              registration.update();
-            }, 30000);
-          })
-          .catch((error) => {
-            console.warn('⚠️ Error al registrar Service Worker:', error);
+      window.addEventListener('load', async () => {
+        try {
+          console.log('[PWA Reparto] 🚀 Iniciando registro de Service Worker...');
+          
+          // Registrar el Service Worker
+          const registration = await navigator.serviceWorker.register('./service-worker.js', {
+            updateViaCache: 'none' // Importante: no cachear el SW mismo
           });
-        
-        // Recargar página cuando el SW tome control
+          
+          console.log('[PWA Reparto] ✅ Service Worker registrado:', registration.scope);
+
+          // ===================================
+          // 🔔 DETECTOR DE ACTUALIZACIONES
+          // ===================================
+          registration.addEventListener('updatefound', () => {
+            console.log('[PWA Reparto] 🔍 Actualización detectada...');
+            newServiceWorker = registration.installing;
+            
+            newServiceWorker.addEventListener('statechange', () => {
+              console.log('[PWA Reparto] 📊 Estado del nuevo SW:', newServiceWorker.state);
+              
+              // Si el nuevo SW está instalado Y hay uno activo = nueva versión lista
+              if (newServiceWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                console.log('[PWA Reparto] 🎉 Nueva versión disponible');
+                mostrarBannerActualizacion();
+              }
+            });
+          });
+
+          // ===================================
+          // 🔄 AUTO-VERIFICACIÓN DE ACTUALIZACIONES
+          // ===================================
+          // Verificar cada 60 segundos si hay nueva versión
+          setInterval(() => {
+            console.log('[PWA Reparto] 🔍 Verificando actualizaciones...');
+            registration.update().catch(err => {
+              console.log('[PWA Reparto] ⚠️ Error al verificar actualización:', err);
+            });
+          }, 60000);
+          
+          // También verificar cuando la app vuelve a estar visible
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+              console.log('[PWA Reparto] 👁️ App visible, verificando actualizaciones...');
+              registration.update().catch(() => {});
+            }
+          });
+          
+        } catch (error) {
+          console.error('[PWA Reparto] ❌ Error al registrar Service Worker:', error);
+          console.error('[PWA Reparto] 📋 Detalles:', error.message);
+        }
+
+        // ===================================
+        // 🔄 RECARGAR CUANDO NUEVO SW TOME CONTROL
+        // ===================================
         let refreshing = false;
         navigator.serviceWorker.addEventListener('controllerchange', () => {
           if (!refreshing) {
             refreshing = true;
-            console.log('🔄 Service Worker actualizado, recargando...');
+            console.log('[PWA Reparto] 🔄 Nuevo Service Worker activo, recargando...');
             window.location.reload();
           }
         });
       });
     } else {
-      console.warn('⚠️ Service Workers no soportados en este navegador');
+      console.warn('[PWA Reparto] ⚠️ Service Workers no soportados en este navegador');
     }
 
     // Variable para guardar el prompt de instalación
