@@ -475,6 +475,62 @@
           
           <div id="lineasPedidoContainer" style="margin:10px 0 0 0;" role="list" aria-label="Lista de productos en el pedido"></div>
           
+          <!-- Subtotal (antes del descuento) -->
+          <div id="pedidoSubtotalDisplay" style="font-weight:600;color:#6b7280;text-align:right;margin-bottom:4px;font-size:1.1rem;display:none;" aria-live="polite"></div>
+          
+          <!-- 💰 SISTEMA DE DESCUENTO MANUAL -->
+          <div id="seccionDescuento" style="background:#f9fafb;border:2px dashed #d1d5db;border-radius:10px;padding:12px;margin:10px 0;display:none;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <label style="font-weight:600;color:#374151;font-size:0.95rem;">💰 Aplicar Descuento (Opcional)</label>
+              <button type="button" id="btnQuitarDescuento" style="background:#ef4444;color:white;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;display:none;" title="Quitar descuento">
+                ✕ Quitar
+              </button>
+            </div>
+            
+            <div style="display:flex;gap:8px;align-items:flex-end;">
+              <!-- Tipo de descuento -->
+              <div style="flex:1;">
+                <label for="tipoDescuento" style="display:block;font-size:0.85rem;color:#6b7280;margin-bottom:4px;">Tipo:</label>
+                <select id="tipoDescuento" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem;">
+                  <option value="monto">💵 Monto Fijo</option>
+                  <option value="porcentaje">% Porcentaje</option>
+                </select>
+              </div>
+              
+              <!-- Valor del descuento -->
+              <div style="flex:1;">
+                <label for="valorDescuento" style="display:block;font-size:0.85rem;color:#6b7280;margin-bottom:4px;">
+                  <span id="labelValorDescuento">Descuento ($):</span>
+                </label>
+                <input type="number" 
+                       id="valorDescuento" 
+                       min="0" 
+                       step="100"
+                       placeholder="0"
+                       style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem;text-align:right;"
+                       aria-label="Valor del descuento">
+              </div>
+              
+              <!-- Botón aplicar -->
+              <div>
+                <button type="button" id="btnAplicarDescuento" style="background:#10b981;color:white;border:none;padding:9px 16px;border-radius:6px;cursor:pointer;font-size:0.9rem;font-weight:600;white-space:nowrap;">
+                  ✓ Aplicar
+                </button>
+              </div>
+            </div>
+            
+            <!-- Descuento aplicado (vista previa) -->
+            <div id="descuentoAplicadoInfo" style="margin-top:8px;padding:8px;background:#dcfce7;border-radius:6px;display:none;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:0.9rem;color:#166534;">
+                  <strong>Descuento:</strong> <span id="textoDescuentoAplicado"></span>
+                </span>
+                <span id="montoDescuentoAplicado" style="font-size:1rem;font-weight:700;color:#dc2626;"></span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Total final -->
           <div id="pedidoTotalDisplay" style="font-weight:700;color:#16a34a;text-align:right;margin-bottom:8px;font-size:1.3rem;" aria-live="polite"></div>
         </fieldset>
         

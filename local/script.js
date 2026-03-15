@@ -594,6 +594,17 @@ function clearForm(formId) {
       input.classList.remove('campo-autocompletado');
     }
   });
+  
+  // 🔥 NUEVO: Limpiar descuento aplicado
+  descuentoAplicado = { tipo: null, valor: 0, monto: 0 };
+  const valorDescInput = document.getElementById('valorDescuento');
+  if (valorDescInput) valorDescInput.value = '';
+  const infoDesc = document.getElementById('descuentoAplicadoInfo');
+  if (infoDesc) infoDesc.style.display = 'none';
+  const btnQuitarDesc = document.getElementById('btnQuitarDescuento');
+  if (btnQuitarDesc) btnQuitarDesc.style.display = 'none';
+  const seccionDesc = document.getElementById('seccionDescuento');
+  if (seccionDesc) seccionDesc.style.display = 'none';
 }
 
 function formatDateISO(date) {
@@ -1446,10 +1457,22 @@ async function guardarPedido() {
     }
 
     // Calcular total del pedido
-    const totalPedido = lineasPedido.reduce((acc, p) => {
+    const subtotalPedido = lineasPedido.reduce((acc, p) => {
       const esGranel = p.nombre && p.nombre.toLowerCase().includes('(granel)');
       return acc + (esGranel ? p.cantidad : p.cantidad * p.precio);
     }, 0);
+    
+    // 🔥 NUEVO: Calcular descuento y total final
+    let montoDescuento = 0;
+    if (descuentoAplicado.tipo && descuentoAplicado.valor > 0) {
+      if (descuentoAplicado.tipo === 'monto') {
+        montoDescuento = Math.min(descuentoAplicado.valor, subtotalPedido);
+      } else if (descuentoAplicado.tipo === 'porcentaje') {
+        montoDescuento = Math.round((subtotalPedido * descuentoAplicado.valor) / 100);
+      }
+    }
+    
+    const totalPedido = Math.max(0, subtotalPedido - montoDescuento);
     
     // Verificar que el total no sea $0
     if (totalPedido === 0) {
@@ -1479,10 +1502,11 @@ async function guardarPedido() {
       fecha: validaciones.fecha.valor,
       metodo_pago: metodoEl.value || 'E',
       notas: validaciones.nota.valor,
-      total: lineasPedido.reduce((acc, p) => {
-        const esGranel = p.nombre && p.nombre.toLowerCase().includes('(granel)');
-        return acc + (esGranel ? p.cantidad : p.cantidad * p.precio);
-      }, 0),
+      total: totalPedido, // Total final con descuento aplicado
+      subtotal: subtotalPedido, // 🔥 NUEVO: Subtotal sin descuento
+      descuento_tipo: descuentoAplicado.tipo, // 🔥 NUEVO: 'monto', 'porcentaje', o null
+      descuento_valor: descuentoAplicado.valor || 0, // 🔥 NUEVO: Valor del descuento
+      descuento_monto: montoDescuento, // 🔥 NUEVO: Monto real descontado en pesos
       entregado: false,
       prioridad: rutaEl.value || 'C', // Prioridad desde selector de ruta (por defecto C)
       orden_ruta: Math.floor(Date.now() / 1000), // Timestamp en segundos (más pequeño)
@@ -1569,16 +1593,30 @@ async function eliminarPedido(docId, btnElement = null) {
   }
 
   try {
-    // Paso 2: Llamada a Supabase
+    // 🔥 Paso 2: Obtener datos del pedido ANTES de eliminar
+    const { data: pedido, error: errorGet } = await supabase_client
+      .from('pedidos')
+      .select('*')
+      .eq('id', docId)
+      .single();
+    
+    if (errorGet) {
+      throw new Error(errorGet.message);
+    }
+    
+    // 🔥 Paso 3: Devolver stock de items marcados en "Ver Carga"
+    await devolverStockItemsMarcados(docId, pedido);
+    
+    // Paso 4: Eliminar pedido de Supabase
     const { error } = await supabase_client.from('pedidos').delete().eq('id', docId);
     
-    // Paso 3: Manejo de error
+    // Paso 5: Manejo de error
     if (error) {
       throw new Error(error.message);
     }
     
     // Éxito
-    ErrorHandler.mostrarExito('🗑️ Pedido eliminado correctamente');
+    ErrorHandler.mostrarExito('🗑️ Pedido eliminado y stock liberado correctamente');
     cargarPedidos();
     
   } catch (error) {
@@ -2289,13 +2327,36 @@ async function reagendarPedido(docId, fechaActual){
     return;
   }
   
-  const nuevaFecha = nextBusinessDayISO(fechaActual);
-  const { error } = await supabase_client.from('pedidos').update({ fecha: nuevaFecha }).eq('id', docId);
-  if(error) {
-    alert('⚠️ Error de conexión. No se pudo reagendar el pedido. Intenta de nuevo.\n\nDetalle: ' + error.message);
-  } else { 
-    ErrorHandler.mostrarExito('📅 Pedido reagendado para: ' + nuevaFecha);
+  try {
+    // 🔥 Paso 1: Obtener datos del pedido ANTES de reagendar
+    const { data: pedido, error: errorGet } = await supabase_client
+      .from('pedidos')
+      .select('*')
+      .eq('id', docId)
+      .single();
+    
+    if (errorGet) {
+      throw new Error(errorGet.message);
+    }
+    
+    // 🔥 Paso 2: Devolver stock de items marcados en "Ver Carga"
+    // Razón: Al final del día la camioneta se vacía, repartidor debe separar de nuevo
+    await devolverStockItemsMarcados(docId, pedido);
+    
+    // Paso 3: Actualizar fecha del pedido
+    const nuevaFecha = nextBusinessDayISO(fechaActual);
+    const { error } = await supabase_client.from('pedidos').update({ fecha: nuevaFecha }).eq('id', docId);
+    
+    if (error) {
+      throw new Error(error.message);
+    }
+    
+    ErrorHandler.mostrarExito(`📅 Pedido reagendado para: ${nuevaFecha}\n♻️ Stock liberado - marcar nuevamente en Ver Carga`);
     cargarPedidos();
+    
+  } catch (error) {
+    console.error('Error en reagendarPedido:', error);
+    alert('⚠️ Error de conexión. No se pudo reagendar el pedido. Intenta de nuevo.\n\nDetalle: ' + error.message);
   }
 }
 
@@ -2874,15 +2935,16 @@ function renderLineasPedido() {
   const cont = document.getElementById('lineasPedidoContainer');
   if (!cont) return;
   cont.innerHTML = '';
-  let total = 0;
+  let subtotal = 0;
+  
   lineasPedido.forEach((p, idx) => {
     // Detectar si es producto granel
     const esGranel = p.nombre && p.nombre.toLowerCase().includes('(granel)');
     
     // Para granel: cantidad YA ES el total (monto en pesos)
     // Para catálogo: cantidad * precio
-    const subtotal = esGranel ? p.cantidad : (p.cantidad * p.precio);
-    total += subtotal;
+    const subtotalItem = esGranel ? p.cantidad : (p.cantidad * p.precio);
+    subtotal += subtotalItem;
     
     const div = document.createElement('div');
     div.className = 'flex-between flex-gap-8';
@@ -2901,7 +2963,7 @@ function renderLineasPedido() {
         <span class="item-name">${p.nombre}</span>
         <span class="item-quantity">x${p.cantidad}</span>
         <span class="item-price">$${p.precio.toLocaleString('es-CL')}</span>
-        <span class="item-subtotal">Subtotal: $${subtotal.toLocaleString('es-CL')}</span>
+        <span class="item-subtotal">Subtotal: $${subtotalItem.toLocaleString('es-CL')}</span>
         <button type="button" class="remove-item-btn" data-idx="${idx}">✕</button>
       `;
     }
@@ -2912,8 +2974,179 @@ function renderLineasPedido() {
     };
     cont.appendChild(div);
   });
+  
+  // 🔥 NUEVO: Mostrar sección de descuento solo si hay productos
+  const seccionDescuento = document.getElementById('seccionDescuento');
+  if (seccionDescuento) {
+    seccionDescuento.style.display = lineasPedido.length > 0 ? 'block' : 'none';
+  }
+  
+  // 🔥 NUEVO: Calcular y mostrar total con descuento
+  actualizarTotalConDescuento(subtotal);
+}
+
+// ==================================================
+// 💰 SISTEMA DE DESCUENTO MANUAL
+// ==================================================
+
+// Variable global para almacenar el descuento aplicado
+let descuentoAplicado = {
+  tipo: null,      // 'monto' o 'porcentaje'
+  valor: 0,        // valor numérico del descuento
+  monto: 0         // monto real descontado en pesos
+};
+
+/**
+ * Actualizar display de total considerando descuento
+ * @param {number} subtotal - Subtotal sin descuento
+ */
+function actualizarTotalConDescuento(subtotal) {
+  const subtotalDiv = document.getElementById('pedidoSubtotalDisplay');
   const totalDiv = document.getElementById('pedidoTotalDisplay');
-  if (totalDiv) totalDiv.textContent = 'Total: $' + total.toLocaleString('es-CL');
+  
+  if (!totalDiv) return;
+  
+  // Si no hay descuento, mostrar solo el total
+  if (!descuentoAplicado.tipo || descuentoAplicado.valor <= 0) {
+    if (subtotalDiv) subtotalDiv.style.display = 'none';
+    totalDiv.textContent = 'Total: $' + subtotal.toLocaleString('es-CL');
+    return;
+  }
+  
+  // Calcular monto del descuento
+  let montoDescuento = 0;
+  if (descuentoAplicado.tipo === 'monto') {
+    montoDescuento = Math.min(descuentoAplicado.valor, subtotal); // No permitir descuento mayor al subtotal
+  } else if (descuentoAplicado.tipo === 'porcentaje') {
+    montoDescuento = Math.round((subtotal * descuentoAplicado.valor) / 100);
+  }
+  
+  // Actualizar monto real del descuento
+  descuentoAplicado.monto = montoDescuento;
+  
+  const totalFinal = Math.max(0, subtotal - montoDescuento);
+  
+  // Mostrar subtotal
+  if (subtotalDiv) {
+    subtotalDiv.style.display = 'block';
+    subtotalDiv.textContent = 'Subtotal: $' + subtotal.toLocaleString('es-CL');
+  }
+  
+  // Mostrar total final
+  totalDiv.textContent = 'TOTAL: $' + totalFinal.toLocaleString('es-CL');
+  totalDiv.style.fontSize = '1.5rem';
+}
+
+/**
+ * Aplicar descuento al pedido
+ */
+function aplicarDescuento() {
+  const tipo = document.getElementById('tipoDescuento').value;
+  const valorInput = document.getElementById('valorDescuento');
+  const valor = parseFloat(valorInput.value) || 0;
+  
+  // Validación
+  if (valor <= 0) {
+    ErrorHandler.mostrarError('⚠️ El descuento debe ser mayor a 0');
+    return;
+  }
+  
+  if (tipo === 'porcentaje' && valor > 100) {
+    ErrorHandler.mostrarError('⚠️ El porcentaje no puede ser mayor a 100%');
+    return;
+  }
+  
+  // Calcular subtotal actual
+  let subtotal = 0;
+  lineasPedido.forEach((p) => {
+    const esGranel = p.nombre && p.nombre.toLowerCase().includes('(granel)');
+    subtotal += esGranel ? p.cantidad : (p.cantidad * p.precio);
+  });
+  
+  if (tipo === 'monto' && valor > subtotal) {
+    ErrorHandler.mostrarError(`⚠️ El descuento no puede ser mayor al subtotal ($${subtotal.toLocaleString('es-CL')})`);
+    return;
+  }
+  
+  // Aplicar descuento
+  descuentoAplicado = {
+    tipo: tipo,
+    valor: valor,
+    monto: 0 // Se calculará en actualizarTotalConDescuento
+  };
+  
+  // Actualizar UI
+  renderLineasPedido();
+  mostrarDescuentoAplicado();
+  
+  ErrorHandler.mostrarExito('✅ Descuento aplicado correctamente');
+}
+
+/**
+ * Mostrar información del descuento aplicado
+ */
+function mostrarDescuentoAplicado() {
+  const infoDiv = document.getElementById('descuentoAplicadoInfo');
+  const textoSpan = document.getElementById('textoDescuentoAplicado');
+  const montoSpan = document.getElementById('montoDescuentoAplicado');
+  const btnQuitar = document.getElementById('btnQuitarDescuento');
+  
+  if (!infoDiv || !descuentoAplicado.tipo) return;
+  
+  // Mostrar info y botón quitar
+  infoDiv.style.display = 'block';
+  if (btnQuitar) btnQuitar.style.display = 'inline-block';
+  
+  // Texto descriptivo
+  if (descuentoAplicado.tipo === 'monto') {
+    textoSpan.textContent = `Monto fijo de $${descuentoAplicado.valor.toLocaleString('es-CL')}`;
+  } else {
+    textoSpan.textContent = `${descuentoAplicado.valor}% de descuento`;
+  }
+  
+  // Monto descontado
+  montoSpan.textContent = `-$${descuentoAplicado.monto.toLocaleString('es-CL')}`;
+}
+
+/**
+ * Quitar descuento aplicado
+ */
+function quitarDescuento() {
+  descuentoAplicado = { tipo: null, valor: 0, monto: 0 };
+  
+  // Limpiar campos
+  document.getElementById('valorDescuento').value = '';
+  document.getElementById('tipoDescuento').value = 'monto';
+  
+  // Ocultar info
+  const infoDiv = document.getElementById('descuentoAplicadoInfo');
+  const btnQuitar = document.getElementById('btnQuitarDescuento');
+  if (infoDiv) infoDiv.style.display = 'none';
+  if (btnQuitar) btnQuitar.style.display = 'none';
+  
+  // Actualizar totales
+  renderLineasPedido();
+  
+  ErrorHandler.mostrarExito('✅ Descuento removido');
+}
+
+/**
+ * Cambiar label del input según tipo de descuento
+ */
+function cambiarTipoDescuento() {
+  const tipo = document.getElementById('tipoDescuento').value;
+  const label = document.getElementById('labelValorDescuento');
+  const input = document.getElementById('valorDescuento');
+  
+  if (tipo === 'monto') {
+    label.textContent = 'Descuento ($):';
+    input.placeholder = '0';
+    input.step = '100';
+  } else {
+    label.textContent = 'Descuento (%):';
+    input.placeholder = '0';
+    input.step = '1';
+  }
 }
 
 // ==================================================
@@ -3991,12 +4224,23 @@ function render(datosParaRenderizar){
             <span class="price-tag" style="font-size:1rem;padding:2px 6px;">${cobrarLabel}</span>
             <span class="client-name" style="font-size:1rem;font-weight:600;flex:1;min-width:0;">${d.nombre || '(sin nombre)'}</span>
           </div>
+          <!-- 🔥 NUEVO: Mostrar descuento si existe -->
+          ${d.descuento_tipo && d.descuento_valor > 0 ? `
+            <div style="display:flex;align-items:center;gap:4px;margin:2px 0;padding:4px 6px;background:#fef3c7;border-radius:4px;border-left:3px solid #f59e0b;">
+              <span style="font-size:0.8rem;color:#92400e;font-weight:600;">💰 Descuento aplicado:</span>
+              <span style="font-size:0.8rem;color:#b45309;font-weight:700;">
+                ${d.descuento_tipo === 'porcentaje' ? `${d.descuento_valor}%` : `$${d.descuento_valor.toLocaleString('es-CL')}`}
+              </span>
+            </div>
+          ` : ''}
           <!-- Línea 2: Teléfono + WhatsApp compacto -->
           ${d.telefono ? `
             <div style="display:flex;align-items:center;gap:4px;">
               <span style="font-size:0.9375rem;">📞</span>
               <span class="client-phone" data-telefono="${d.telefono}" data-action="call" style="cursor:pointer;font-size:0.9375rem;padding:2px 5px;">${d.telefono}</span>
               <a href="https://api.whatsapp.com/send?phone=56${d.telefono.replace(/\D/g, '')}&text=Hola%20👋,%20somos%20Sabrofood%20🐶🐱%0AQueremos%20avisarte%20que%20tu%20pedido%20ya%20está%20listo%20y%20estamos%20próximos%20a%20realizar%20la%20entrega%20🚚%0A¿Te%20encuentras%20disponible%20para%20recibirlo?%0A¡Quedamos%20atentos!" 
+                 target="_blank"
+                 rel="noopener noreferrer"
                  style="display:inline-flex;align-items:center;justify-content:center;background:#25d366;color:white;padding:3px;border-radius:50%;text-decoration:none;width:20px;height:20px;"
                  title="Abrir WhatsApp">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
@@ -4321,8 +4565,9 @@ function updateResultCount(n, q){
  * Solo cuenta los pedidos que se están mostrando según el filtro actual
  */
 function actualizarContadorPedidos(cantidad) {
-  // Usar SOLO los datos filtrados que se están mostrando
-  const datosActuales = datosFiltrados.length > 0 ? datosFiltrados : datosLocal;
+  // Usar SOLO los datos filtrados que se están mostrando actualmente
+  // Si no hay datos filtrados, significa que el filtro no coincide con ningún pedido (mostrar 0)
+  const datosActuales = datosFiltrados;
   
   // Contar cada categoría
   const entregados = datosActuales.filter(p => p.entregado && p.estado !== 'ANULADO').length;
@@ -6893,8 +7138,8 @@ function obtenerRangoFechas(filtro) {
 function mostrarPedidosPorMetodo(tipo) {
   modalMetodoPagoTipo = tipo; // Guardar tipo actual
   
-  // NUEVO: Sincronizar filtro del modal con el filtro actual de la vista principal
-  modalMetodoPagoFiltro = filtroActual;
+  // El filtro del modal es independiente de la vista principal
+  // No sincronizar con filtroActual para permitir filtrado independiente
   
   const modal = document.getElementById('modalMetodoPago');
   const icono = document.getElementById('modalMetodoPagoIcono');
@@ -6944,16 +7189,7 @@ function mostrarPedidosPorMetodo(tipo) {
     btn.classList.remove('active');
     const filtroBtn = btn.getAttribute('data-filtro');
     
-    // Mapear filtroActual a los filtros del modal
-    let filtroModalEquivalente = modalMetodoPagoFiltro;
-    
-    // Si filtroActual es 'manana' o una fecha específica, marcar 'hoy' por ahora
-    // (el modal no tiene botón para mañana o fecha específica, solo usa el filtro heredado)
-    if (modalMetodoPagoFiltro === 'manana' || modalMetodoPagoFiltro.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      filtroModalEquivalente = 'hoy'; // Los botones solo muestran hoy/semana/mes/todo
-    }
-    
-    if (filtroBtn === filtroModalEquivalente) {
+    if (filtroBtn === modalMetodoPagoFiltro) {
       btn.classList.add('active');
     }
   });
@@ -7200,6 +7436,40 @@ document.addEventListener('DOMContentLoaded', () => {
     modalMetodoPago.addEventListener('click', (e) => {
       if (e.target === modalMetodoPago) {
         cerrarModalMetodoPago();
+      }
+    });
+  }
+});
+
+// ==================================================
+// EVENT LISTENERS: SISTEMA DE DESCUENTO
+// ==================================================
+document.addEventListener('DOMContentLoaded', () => {
+  // Botón aplicar descuento
+  const btnAplicarDescuento = document.getElementById('btnAplicarDescuento');
+  if (btnAplicarDescuento) {
+    btnAplicarDescuento.addEventListener('click', aplicarDescuento);
+  }
+  
+  // Botón quitar descuento
+  const btnQuitarDescuento = document.getElementById('btnQuitarDescuento');
+  if (btnQuitarDescuento) {
+    btnQuitarDescuento.addEventListener('click', quitarDescuento);
+  }
+  
+  // Cambiar label al cambiar tipo de descuento
+  const tipoDescuentoSelect = document.getElementById('tipoDescuento');
+  if (tipoDescuentoSelect) {
+    tipoDescuentoSelect.addEventListener('change', cambiarTipoDescuento);
+  }
+  
+  // Aplicar descuento al presionar Enter en el input
+  const valorDescuentoInput = document.getElementById('valorDescuento');
+  if (valorDescuentoInput) {
+    valorDescuentoInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        aplicarDescuento();
       }
     });
   }
