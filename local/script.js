@@ -594,17 +594,6 @@ function clearForm(formId) {
       input.classList.remove('campo-autocompletado');
     }
   });
-  
-  // 🔥 NUEVO: Limpiar descuento aplicado
-  descuentoAplicado = { tipo: null, valor: 0, monto: 0 };
-  const valorDescInput = document.getElementById('valorDescuento');
-  if (valorDescInput) valorDescInput.value = '';
-  const infoDesc = document.getElementById('descuentoAplicadoInfo');
-  if (infoDesc) infoDesc.style.display = 'none';
-  const btnQuitarDesc = document.getElementById('btnQuitarDescuento');
-  if (btnQuitarDesc) btnQuitarDesc.style.display = 'none';
-  const seccionDesc = document.getElementById('seccionDescuento');
-  if (seccionDesc) seccionDesc.style.display = 'none';
 }
 
 function formatDateISO(date) {
@@ -904,6 +893,12 @@ const METODOS = {
   'PMP': 'Pago Mixto (Pagado)'
 };
 let lineasPedido = [];
+
+// === SISTEMA DE DESCUENTOS ===
+let subtotalSinDescuento = 0;
+let descuentoAplicado = 0;
+let tipoDescuentoActual = 'ninguno'; // 'ninguno', 'monto', 'porcentaje'
+let valorDescuentoActual = 0;
 
 // === SISTEMA DE TIEMPO REAL ===
 function mostrarToast(mensaje, tipo = 'success') {
@@ -1457,22 +1452,10 @@ async function guardarPedido() {
     }
 
     // Calcular total del pedido
-    const subtotalPedido = lineasPedido.reduce((acc, p) => {
+    const totalPedido = lineasPedido.reduce((acc, p) => {
       const esGranel = p.nombre && p.nombre.toLowerCase().includes('(granel)');
       return acc + (esGranel ? p.cantidad : p.cantidad * p.precio);
     }, 0);
-    
-    // 🔥 NUEVO: Calcular descuento y total final
-    let montoDescuento = 0;
-    if (descuentoAplicado.tipo && descuentoAplicado.valor > 0) {
-      if (descuentoAplicado.tipo === 'monto') {
-        montoDescuento = Math.min(descuentoAplicado.valor, subtotalPedido);
-      } else if (descuentoAplicado.tipo === 'porcentaje') {
-        montoDescuento = Math.round((subtotalPedido * descuentoAplicado.valor) / 100);
-      }
-    }
-    
-    const totalPedido = Math.max(0, subtotalPedido - montoDescuento);
     
     // Verificar que el total no sea $0
     if (totalPedido === 0) {
@@ -1502,11 +1485,7 @@ async function guardarPedido() {
       fecha: validaciones.fecha.valor,
       metodo_pago: metodoEl.value || 'E',
       notas: validaciones.nota.valor,
-      total: totalPedido, // Total final con descuento aplicado
-      subtotal: subtotalPedido, // 🔥 NUEVO: Subtotal sin descuento
-      descuento_tipo: descuentoAplicado.tipo, // 🔥 NUEVO: 'monto', 'porcentaje', o null
-      descuento_valor: descuentoAplicado.valor || 0, // 🔥 NUEVO: Valor del descuento
-      descuento_monto: montoDescuento, // 🔥 NUEVO: Monto real descontado en pesos
+      total: Math.max(0, subtotalSinDescuento - descuentoAplicado), // Total con descuento aplicado
       entregado: false,
       prioridad: rutaEl.value || 'C', // Prioridad desde selector de ruta (por defecto C)
       orden_ruta: Math.floor(Date.now() / 1000), // Timestamp en segundos (más pequeño)
@@ -1519,6 +1498,14 @@ async function guardarPedido() {
         precio: parseInt(item.precio)
       }))
     };
+    
+    // Agregar información de descuento si se aplicó
+    if (descuentoAplicado > 0) {
+      pedido.descuento = descuentoAplicado;
+      pedido.tipo_descuento = tipoDescuentoActual;
+      pedido.valor_descuento = valorDescuentoActual;
+      pedido.subtotal_sin_descuento = subtotalSinDescuento;
+    }
 
     // Mostrar indicador de carga
     const btnAgregar = getElement('btnAgregar');
@@ -1536,6 +1523,13 @@ async function guardarPedido() {
       ErrorHandler.mostrarExito('Pedido guardado exitosamente');
       clearForm('formAgregar');
       lineasPedido = [];
+      
+      // Resetear descuentos
+      descuentoAplicado = 0;
+      tipoDescuentoActual = 'ninguno';
+      valorDescuentoActual = 0;
+      subtotalSinDescuento = 0;
+      
       renderLineasPedido();
       
       // Ocultar checkbox de confirmación después de guardar exitosamente
@@ -1593,30 +1587,16 @@ async function eliminarPedido(docId, btnElement = null) {
   }
 
   try {
-    // 🔥 Paso 2: Obtener datos del pedido ANTES de eliminar
-    const { data: pedido, error: errorGet } = await supabase_client
-      .from('pedidos')
-      .select('*')
-      .eq('id', docId)
-      .single();
-    
-    if (errorGet) {
-      throw new Error(errorGet.message);
-    }
-    
-    // 🔥 Paso 3: Devolver stock de items marcados en "Ver Carga"
-    await devolverStockItemsMarcados(docId, pedido);
-    
-    // Paso 4: Eliminar pedido de Supabase
+    // Paso 2: Llamada a Supabase
     const { error } = await supabase_client.from('pedidos').delete().eq('id', docId);
     
-    // Paso 5: Manejo de error
+    // Paso 3: Manejo de error
     if (error) {
       throw new Error(error.message);
     }
     
     // Éxito
-    ErrorHandler.mostrarExito('🗑️ Pedido eliminado y stock liberado correctamente');
+    ErrorHandler.mostrarExito('🗑️ Pedido eliminado correctamente');
     cargarPedidos();
     
   } catch (error) {
@@ -1953,15 +1933,32 @@ async function toggleEntregado(docId, estadoActual, btnElement = null) {
       
       const metodoPago = pedido.metodo_pago || 'E';
       
-      // CAMBIO: Siempre abrir modal de confirmación de pago (sin excepciones)
-      // Restaurar botón y abrir modal
+      // Si ya es TG (Transferencia Pagada), entregar directamente sin modal
+      // No se necesita confirmar pago porque ya está confirmada la transferencia
+      if (metodoPago === 'TG') {
+        const { error: errEntrega } = await supabase_client
+          .from('pedidos')
+          .update({ entregado: true, updated_at: new Date().toISOString() })
+          .eq('id', docId);
+        if (errEntrega) throw new Error(errEntrega.message);
+        if (btnElement) {
+          btnElement.disabled = false;
+          btnElement.classList.remove('btn-loading');
+          btnElement.innerHTML = textoOriginal;
+          btnElement.style.opacity = '1';
+        }
+        ErrorHandler.mostrarExito('✅ Pedido entregado - Transferencia ya confirmada');
+        cargarPedidos();
+        return;
+      }
+      
+      // Para otros métodos, abrir modal de confirmación de pago
       if (btnElement) {
         btnElement.disabled = false;
         btnElement.classList.remove('btn-loading');
         btnElement.innerHTML = textoOriginal;
         btnElement.style.opacity = '1';
       }
-      // Abrir modal de confirmación de pago OBLIGATORIO
       abrirModalConfirmacionPago(docId)
     }
     
@@ -2327,36 +2324,13 @@ async function reagendarPedido(docId, fechaActual){
     return;
   }
   
-  try {
-    // 🔥 Paso 1: Obtener datos del pedido ANTES de reagendar
-    const { data: pedido, error: errorGet } = await supabase_client
-      .from('pedidos')
-      .select('*')
-      .eq('id', docId)
-      .single();
-    
-    if (errorGet) {
-      throw new Error(errorGet.message);
-    }
-    
-    // 🔥 Paso 2: Devolver stock de items marcados en "Ver Carga"
-    // Razón: Al final del día la camioneta se vacía, repartidor debe separar de nuevo
-    await devolverStockItemsMarcados(docId, pedido);
-    
-    // Paso 3: Actualizar fecha del pedido
-    const nuevaFecha = nextBusinessDayISO(fechaActual);
-    const { error } = await supabase_client.from('pedidos').update({ fecha: nuevaFecha }).eq('id', docId);
-    
-    if (error) {
-      throw new Error(error.message);
-    }
-    
-    ErrorHandler.mostrarExito(`📅 Pedido reagendado para: ${nuevaFecha}\n♻️ Stock liberado - marcar nuevamente en Ver Carga`);
-    cargarPedidos();
-    
-  } catch (error) {
-    console.error('Error en reagendarPedido:', error);
+  const nuevaFecha = nextBusinessDayISO(fechaActual);
+  const { error } = await supabase_client.from('pedidos').update({ fecha: nuevaFecha }).eq('id', docId);
+  if(error) {
     alert('⚠️ Error de conexión. No se pudo reagendar el pedido. Intenta de nuevo.\n\nDetalle: ' + error.message);
+  } else { 
+    ErrorHandler.mostrarExito('📅 Pedido reagendado para: ' + nuevaFecha);
+    cargarPedidos();
   }
 }
 
@@ -2658,6 +2632,24 @@ async function editarPedido(docId) {
     
     // Cargar productos
     lineasPedido = Array.isArray(pedido.items) ? [...pedido.items] : [];
+    
+    // Cargar datos de descuento si existen
+    if (pedido.descuento && pedido.descuento > 0) {
+      descuentoAplicado = pedido.descuento || 0;
+      tipoDescuentoActual = pedido.tipo_descuento || 'ninguno';
+      valorDescuentoActual = pedido.valor_descuento || 0;
+      subtotalSinDescuento = pedido.subtotal_sin_descuento || 0;
+      
+      // Precargar campos del descuento
+      const tipoDesc = document.getElementById('tipoDescuento');
+      const valorDesc = document.getElementById('valorDescuento');
+      if (tipoDesc) tipoDesc.value = tipoDescuentoActual;
+      if (valorDesc) valorDesc.value = valorDescuentoActual;
+      
+      // Cambiar label según tipo
+      cambiarTipoDescuento();
+    }
+    
     renderLineasPedido();
     
     // Cambiar el botón para modo edición
@@ -2704,12 +2696,6 @@ async function actualizarPedido(docId) {
       return;
     }
     
-    // Calcular total
-    const total = lineasPedido.reduce((sum, item) => {
-      const esGranel = item.nombre && item.nombre.toLowerCase().includes('(granel)');
-      return sum + (esGranel ? item.cantidad : item.cantidad * item.precio);
-    }, 0);
-    
     // Preparar datos actualizados
     const pedidoActualizado = {
       nombre: document.getElementById('nombre').value.trim() || null,
@@ -2723,10 +2709,24 @@ async function actualizarPedido(docId) {
         cantidad: item.cantidad,
         precio: item.precio
       })),
-      total: total,
+      total: Math.max(0, subtotalSinDescuento - descuentoAplicado), // Total con descuento
       notas: document.getElementById('notas').value.trim() || null,
       updated_at: new Date().toISOString()
     };
+    
+    // Agregar información de descuento si se aplicó
+    if (descuentoAplicado > 0) {
+      pedidoActualizado.descuento = descuentoAplicado;
+      pedidoActualizado.tipo_descuento = tipoDescuentoActual;
+      pedidoActualizado.valor_descuento = valorDescuentoActual;
+      pedidoActualizado.subtotal_sin_descuento = subtotalSinDescuento;
+    } else {
+      // Si no hay descuento, limpiar campos en la BD
+      pedidoActualizado.descuento = null;
+      pedidoActualizado.tipo_descuento = null;
+      pedidoActualizado.valor_descuento = null;
+      pedidoActualizado.subtotal_sin_descuento = null;
+    }
     
     // Actualizar en Supabase
     const btnActualizar = document.getElementById('btnAgregar');
@@ -2755,6 +2755,13 @@ async function actualizarPedido(docId) {
       // Limpiar formulario y cerrar modal
       clearForm('formAgregar');
       lineasPedido = [];
+      
+      // Resetear descuentos
+      descuentoAplicado = 0;
+      tipoDescuentoActual = 'ninguno';
+      valorDescuentoActual = 0;
+      subtotalSinDescuento = 0;
+      
       renderLineasPedido();
       getElement('formModalBackdrop').style.display = 'none';
       
@@ -2935,16 +2942,15 @@ function renderLineasPedido() {
   const cont = document.getElementById('lineasPedidoContainer');
   if (!cont) return;
   cont.innerHTML = '';
-  let subtotal = 0;
-  
+  let total = 0;
   lineasPedido.forEach((p, idx) => {
     // Detectar si es producto granel
     const esGranel = p.nombre && p.nombre.toLowerCase().includes('(granel)');
     
     // Para granel: cantidad YA ES el total (monto en pesos)
     // Para catálogo: cantidad * precio
-    const subtotalItem = esGranel ? p.cantidad : (p.cantidad * p.precio);
-    subtotal += subtotalItem;
+    const subtotal = esGranel ? p.cantidad : (p.cantidad * p.precio);
+    total += subtotal;
     
     const div = document.createElement('div');
     div.className = 'flex-between flex-gap-8';
@@ -2963,7 +2969,7 @@ function renderLineasPedido() {
         <span class="item-name">${p.nombre}</span>
         <span class="item-quantity">x${p.cantidad}</span>
         <span class="item-price">$${p.precio.toLocaleString('es-CL')}</span>
-        <span class="item-subtotal">Subtotal: $${subtotalItem.toLocaleString('es-CL')}</span>
+        <span class="item-subtotal">Subtotal: $${subtotal.toLocaleString('es-CL')}</span>
         <button type="button" class="remove-item-btn" data-idx="${idx}">✕</button>
       `;
     }
@@ -2975,178 +2981,160 @@ function renderLineasPedido() {
     cont.appendChild(div);
   });
   
-  // 🔥 NUEVO: Mostrar sección de descuento solo si hay productos
+  // Actualizar subtotal sin descuento
+  subtotalSinDescuento = total;
+  
+  // Mostrar/ocultar sección de descuento
   const seccionDescuento = document.getElementById('seccionDescuento');
   if (seccionDescuento) {
     seccionDescuento.style.display = lineasPedido.length > 0 ? 'block' : 'none';
   }
   
-  // 🔥 NUEVO: Calcular y mostrar total con descuento
-  actualizarTotalConDescuento(subtotal);
-}
-
-// ==================================================
-// 💰 SISTEMA DE DESCUENTO MANUAL
-// ==================================================
-
-// Variable global para almacenar el descuento aplicado
-let descuentoAplicado = {
-  tipo: null,      // 'monto' o 'porcentaje'
-  valor: 0,        // valor numérico del descuento
-  monto: 0         // monto real descontado en pesos
-};
-
-/**
- * Actualizar display de total considerando descuento
- * @param {number} subtotal - Subtotal sin descuento
- */
-function actualizarTotalConDescuento(subtotal) {
-  const subtotalDiv = document.getElementById('pedidoSubtotalDisplay');
-  const totalDiv = document.getElementById('pedidoTotalDisplay');
-  
-  if (!totalDiv) return;
-  
-  // Si no hay descuento, mostrar solo el total
-  if (!descuentoAplicado.tipo || descuentoAplicado.valor <= 0) {
+  // Recalcular descuento si hay uno activo
+  if (tipoDescuentoActual !== 'ninguno' && valorDescuentoActual > 0) {
+    aplicarDescuentoPedido();
+  } else {
+    // Sin descuento: mostrar solo total
+    const subtotalDiv = document.getElementById('pedidoSubtotalDisplay');
+    const totalDiv = document.getElementById('pedidoTotalDisplay');
     if (subtotalDiv) subtotalDiv.style.display = 'none';
-    totalDiv.textContent = 'Total: $' + subtotal.toLocaleString('es-CL');
-    return;
+    if (totalDiv) totalDiv.textContent = 'Total: $' + total.toLocaleString('es-CL');
   }
-  
-  // Calcular monto del descuento
-  let montoDescuento = 0;
-  if (descuentoAplicado.tipo === 'monto') {
-    montoDescuento = Math.min(descuentoAplicado.valor, subtotal); // No permitir descuento mayor al subtotal
-  } else if (descuentoAplicado.tipo === 'porcentaje') {
-    montoDescuento = Math.round((subtotal * descuentoAplicado.valor) / 100);
-  }
-  
-  // Actualizar monto real del descuento
-  descuentoAplicado.monto = montoDescuento;
-  
-  const totalFinal = Math.max(0, subtotal - montoDescuento);
-  
-  // Mostrar subtotal
-  if (subtotalDiv) {
-    subtotalDiv.style.display = 'block';
-    subtotalDiv.textContent = 'Subtotal: $' + subtotal.toLocaleString('es-CL');
-  }
-  
-  // Mostrar total final
-  totalDiv.textContent = 'TOTAL: $' + totalFinal.toLocaleString('es-CL');
-  totalDiv.style.fontSize = '1.5rem';
 }
 
+// ==================================================
+// SISTEMA DE DESCUENTOS PARA PEDIDOS
+// ==================================================
+
 /**
- * Aplicar descuento al pedido
+ * Aplicar descuento al pedido actual
  */
-function aplicarDescuento() {
-  const tipo = document.getElementById('tipoDescuento').value;
+function aplicarDescuentoPedido() {
+  const tipoSelect = document.getElementById('tipoDescuento');
   const valorInput = document.getElementById('valorDescuento');
+  const tipo = tipoSelect.value;
   const valor = parseFloat(valorInput.value) || 0;
   
-  // Validación
   if (valor <= 0) {
-    ErrorHandler.mostrarError('⚠️ El descuento debe ser mayor a 0');
+    ErrorHandler.mostrarWarning('⚠️ Ingresa un valor de descuento mayor a 0');
     return;
   }
   
-  if (tipo === 'porcentaje' && valor > 100) {
-    ErrorHandler.mostrarError('⚠️ El porcentaje no puede ser mayor a 100%');
+  if (subtotalSinDescuento === 0) {
+    ErrorHandler.mostrarWarning('⚠️ Agrega productos antes de aplicar descuento');
     return;
   }
   
-  // Calcular subtotal actual
-  let subtotal = 0;
-  lineasPedido.forEach((p) => {
-    const esGranel = p.nombre && p.nombre.toLowerCase().includes('(granel)');
-    subtotal += esGranel ? p.cantidad : (p.cantidad * p.precio);
-  });
-  
-  if (tipo === 'monto' && valor > subtotal) {
-    ErrorHandler.mostrarError(`⚠️ El descuento no puede ser mayor al subtotal ($${subtotal.toLocaleString('es-CL')})`);
-    return;
+  // Calcular descuento según tipo
+  if (tipo === 'porcentaje') {
+    if (valor > 100) {
+      ErrorHandler.mostrarWarning('⚠️ El porcentaje debe ser entre 0 y 100');
+      return;
+    }
+    descuentoAplicado = Math.round((subtotalSinDescuento * valor) / 100);
+    tipoDescuentoActual = 'porcentaje';
+    valorDescuentoActual = valor;
+  } else if (tipo === 'monto') {
+    if (valor > subtotalSinDescuento) {
+      ErrorHandler.mostrarWarning('⚠️ El descuento no puede ser mayor al subtotal');
+      return;
+    }
+    descuentoAplicado = valor;
+    tipoDescuentoActual = 'monto';
+    valorDescuentoActual = valor;
   }
   
-  // Aplicar descuento
-  descuentoAplicado = {
-    tipo: tipo,
-    valor: valor,
-    monto: 0 // Se calculará en actualizarTotalConDescuento
-  };
+  // Calcular total con descuento
+  const totalConDescuento = Math.max(0, subtotalSinDescuento - descuentoAplicado);
   
   // Actualizar UI
-  renderLineasPedido();
-  mostrarDescuentoAplicado();
-  
-  ErrorHandler.mostrarExito('✅ Descuento aplicado correctamente');
-}
-
-/**
- * Mostrar información del descuento aplicado
- */
-function mostrarDescuentoAplicado() {
-  const infoDiv = document.getElementById('descuentoAplicadoInfo');
-  const textoSpan = document.getElementById('textoDescuentoAplicado');
-  const montoSpan = document.getElementById('montoDescuentoAplicado');
+  const subtotalDiv = document.getElementById('pedidoSubtotalDisplay');
+  const totalDiv = document.getElementById('pedidoTotalDisplay');
+  const descuentoInfo = document.getElementById('descuentoAplicadoInfo');
+  const textoDescuento = document.getElementById('textoDescuentoAplicado');
+  const montoDescuento = document.getElementById('montoDescuentoAplicado');
   const btnQuitar = document.getElementById('btnQuitarDescuento');
   
-  if (!infoDiv || !descuentoAplicado.tipo) return;
-  
-  // Mostrar info y botón quitar
-  infoDiv.style.display = 'block';
-  if (btnQuitar) btnQuitar.style.display = 'inline-block';
-  
-  // Texto descriptivo
-  if (descuentoAplicado.tipo === 'monto') {
-    textoSpan.textContent = `Monto fijo de $${descuentoAplicado.valor.toLocaleString('es-CL')}`;
-  } else {
-    textoSpan.textContent = `${descuentoAplicado.valor}% de descuento`;
+  if (subtotalDiv) {
+    subtotalDiv.style.display = 'block';
+    subtotalDiv.textContent = 'Subtotal: $' + subtotalSinDescuento.toLocaleString('es-CL');
   }
   
-  // Monto descontado
-  montoSpan.textContent = `-$${descuentoAplicado.monto.toLocaleString('es-CL')}`;
+  if (descuentoInfo && textoDescuento && montoDescuento) {
+    descuentoInfo.style.display = 'block';
+    if (tipo === 'porcentaje') {
+      textoDescuento.textContent = `Porcentaje de ${valor}%`;
+    } else {
+      textoDescuento.textContent = `Monto fijo de $${valor.toLocaleString('es-CL')}`;
+    }
+    montoDescuento.textContent = '-$' + descuentoAplicado.toLocaleString('es-CL');
+  }
+  
+  if (totalDiv) {
+    totalDiv.textContent = 'TOTAL: $' + totalConDescuento.toLocaleString('es-CL');
+  }
+  
+  if (btnQuitar) {
+    btnQuitar.style.display = 'block';
+  }
+  
+  ErrorHandler.mostrarExito(`✅ Descuento de $${descuentoAplicado.toLocaleString('es-CL')} aplicado`);
 }
 
 /**
- * Quitar descuento aplicado
+ * Quitar descuento del pedido
  */
-function quitarDescuento() {
-  descuentoAplicado = { tipo: null, valor: 0, monto: 0 };
+function quitarDescuentoPedido() {
+  descuentoAplicado = 0;
+  tipoDescuentoActual = 'ninguno';
+  valorDescuentoActual = 0;
   
   // Limpiar campos
-  document.getElementById('valorDescuento').value = '';
-  document.getElementById('tipoDescuento').value = 'monto';
+  const valorInput = document.getElementById('valorDescuento');
+  if (valorInput) valorInput.value = '';
   
-  // Ocultar info
-  const infoDiv = document.getElementById('descuentoAplicadoInfo');
+  // Ocultar elementos de descuento
+  const descuentoInfo = document.getElementById('descuentoAplicadoInfo');
   const btnQuitar = document.getElementById('btnQuitarDescuento');
-  if (infoDiv) infoDiv.style.display = 'none';
+  const subtotalDiv = document.getElementById('pedidoSubtotalDisplay');
+  
+  if (descuentoInfo) descuentoInfo.style.display = 'none';
   if (btnQuitar) btnQuitar.style.display = 'none';
+  if (subtotalDiv) subtotalDiv.style.display = 'none';
   
-  // Actualizar totales
-  renderLineasPedido();
+  // Actualizar total
+  const totalDiv = document.getElementById('pedidoTotalDisplay');
+  if (totalDiv) {
+    totalDiv.textContent = 'Total: $' + subtotalSinDescuento.toLocaleString('es-CL');
+  }
   
-  ErrorHandler.mostrarExito('✅ Descuento removido');
+  ErrorHandler.mostrarInfo('Descuento eliminado');
 }
 
 /**
- * Cambiar label del input según tipo de descuento
+ * Cambiar label según tipo de descuento
  */
 function cambiarTipoDescuento() {
-  const tipo = document.getElementById('tipoDescuento').value;
+  const tipoSelect = document.getElementById('tipoDescuento');
   const label = document.getElementById('labelValorDescuento');
-  const input = document.getElementById('valorDescuento');
+  const valorInput = document.getElementById('valorDescuento');
   
-  if (tipo === 'monto') {
-    label.textContent = 'Descuento ($):';
-    input.placeholder = '0';
-    input.step = '100';
+  if (!tipoSelect || !label || !valorInput) return;
+  
+  if (tipoSelect.value === 'porcentaje') {
+    label.textContent = 'Porcentaje (%):';
+    valorInput.placeholder = 'Ej: 10';
+    valorInput.max = '100';
+    valorInput.step = '1';
   } else {
-    label.textContent = 'Descuento (%):';
-    input.placeholder = '0';
-    input.step = '1';
+    label.textContent = 'Descuento ($):';
+    valorInput.placeholder = '0';
+    valorInput.max = '';
+    valorInput.step = '100';
   }
+  
+  // Limpiar valor al cambiar tipo
+  valorInput.value = '';
 }
 
 // ==================================================
@@ -4091,6 +4079,13 @@ function anadirProducto() {
 function limpiarFormulario() {
   clearForm('formAgregar');
   lineasPedido = [];
+  
+  // Resetear descuentos
+  descuentoAplicado = 0;
+  tipoDescuentoActual = 'ninguno';
+  valorDescuentoActual = 0;
+  subtotalSinDescuento = 0;
+  
   renderLineasPedido();
   setFechaHoyDefault();
   
@@ -4224,25 +4219,15 @@ function render(datosParaRenderizar){
             <span class="price-tag" style="font-size:1rem;padding:2px 6px;">${cobrarLabel}</span>
             <span class="client-name" style="font-size:1rem;font-weight:600;flex:1;min-width:0;">${d.nombre || '(sin nombre)'}</span>
           </div>
-          <!-- 🔥 NUEVO: Mostrar descuento si existe -->
-          ${d.descuento_tipo && d.descuento_valor > 0 ? `
-            <div style="display:flex;align-items:center;gap:4px;margin:2px 0;padding:4px 6px;background:#fef3c7;border-radius:4px;border-left:3px solid #f59e0b;">
-              <span style="font-size:0.8rem;color:#92400e;font-weight:600;">💰 Descuento aplicado:</span>
-              <span style="font-size:0.8rem;color:#b45309;font-weight:700;">
-                ${d.descuento_tipo === 'porcentaje' ? `${d.descuento_valor}%` : `$${d.descuento_valor.toLocaleString('es-CL')}`}
-              </span>
-            </div>
-          ` : ''}
           <!-- Línea 2: Teléfono + WhatsApp compacto -->
           ${d.telefono ? `
             <div style="display:flex;align-items:center;gap:4px;">
               <span style="font-size:0.9375rem;">📞</span>
               <span class="client-phone" data-telefono="${d.telefono}" data-action="call" style="cursor:pointer;font-size:0.9375rem;padding:2px 5px;">${d.telefono}</span>
-              <a href="https://api.whatsapp.com/send?phone=56${d.telefono.replace(/\D/g, '')}&text=Hola%20👋,%20somos%20Sabrofood%20🐶🐱%0AQueremos%20avisarte%20que%20tu%20pedido%20ya%20está%20listo%20y%20estamos%20próximos%20a%20realizar%20la%20entrega%20🚚%0A¿Te%20encuentras%20disponible%20para%20recibirlo?%0A¡Quedamos%20atentos!" 
-                 target="_blank"
-                 rel="noopener noreferrer"
+              <a href="https://wa.me/56${d.telefono.replace(/\D/g, '')}?text=Hola%20👋,%20somos%20Sabrofood%20🐶🐱%0AQueremos%20avisarte%20que%20tu%20pedido%20ya%20está%20listo%20y%20estamos%20próximos%20a%20realizar%20la%20entrega%20🚚%0A¿Te%20encuentras%20disponible%20para%20recibirlo?%0A¡Quedamos%20atentos!" 
+                 target="_blank" 
                  style="display:inline-flex;align-items:center;justify-content:center;background:#25d366;color:white;padding:3px;border-radius:50%;text-decoration:none;width:20px;height:20px;"
-                 title="Abrir WhatsApp">
+                 title="WhatsApp">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
                   <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
                 </svg>
@@ -4565,9 +4550,8 @@ function updateResultCount(n, q){
  * Solo cuenta los pedidos que se están mostrando según el filtro actual
  */
 function actualizarContadorPedidos(cantidad) {
-  // Usar SOLO los datos filtrados que se están mostrando actualmente
-  // Si no hay datos filtrados, significa que el filtro no coincide con ningún pedido (mostrar 0)
-  const datosActuales = datosFiltrados;
+  // Usar SOLO los datos filtrados que se están mostrando
+  const datosActuales = datosFiltrados.length > 0 ? datosFiltrados : datosLocal;
   
   // Contar cada categoría
   const entregados = datosActuales.filter(p => p.entregado && p.estado !== 'ANULADO').length;
@@ -4631,6 +4615,12 @@ function closeFormModal(){
     document.getElementById('formModalBackdrop').style.display = 'none'; 
     modal.classList.remove('hide');
   }, 300);
+  
+  // Resetear descuentos
+  descuentoAplicado = 0;
+  tipoDescuentoActual = 'ninguno';
+  valorDescuentoActual = 0;
+  subtotalSinDescuento = 0;
   
   // Restaurar el formulario al modo "agregar" al cerrar
   restaurarModoAgregar();
@@ -4953,6 +4943,22 @@ function inicializarAppCompleta() {
     btnLimpiar.onclick = limpiarFormulario;
   }
   
+  // Event listeners para descuentos
+  const btnAplicarDescuento = document.getElementById('btnAplicarDescuento');
+  if (btnAplicarDescuento) {
+    btnAplicarDescuento.onclick = aplicarDescuentoPedido;
+  }
+  
+  const btnQuitarDescuento = document.getElementById('btnQuitarDescuento');
+  if (btnQuitarDescuento) {
+    btnQuitarDescuento.onclick = quitarDescuentoPedido;
+  }
+  
+  const tipoDescuento = document.getElementById('tipoDescuento');
+  if (tipoDescuento) {
+    tipoDescuento.onchange = cambiarTipoDescuento;
+  }
+  
   // Configurar búsqueda automática de historial
   configurarBusquedaHistorial();
   
@@ -5089,12 +5095,49 @@ function actualizarResumenCaja(datos = datosLocal, filtro = 'hoy') {
   datos.forEach((pedido) => {
     // Solo contar pedidos entregados Y NO anulados
     if (pedido.entregado && pedido.estado !== 'ANULADO') {
-      // IMPORTANTE: Filtrar por FECHA DE ENTREGA (no created_at)
-      // La recaudación se cuenta cuando el pedido se entrega
-      const fechaPedido = new Date(pedido.fecha + 'T00:00:00');
-      if (fechaPedido < desde || fechaPedido >= hasta) return;
-      
       const metodo = pedido.metodo_pago || pedido.metodo || 'E';
+      
+      // ============================================================
+      // LÓGICA DE FECHA DE CONTABILIZACIÓN
+      // ============================================================
+      // Las transferencias cuentan para el día que fueron CONFIRMADAS/PAGADAS,
+      // NO para el día que se entregaron
+      let fechaContabilizar;
+      const esTransferencia = ['TP', 'TG', 'T'].includes(metodo) || metodo.includes('TRANSF');
+      
+      if (esTransferencia && pedido.boleteada && pedido.fecha_boleta) {
+        // CASO 1: TP→TG (cambiado a pagada) → cuenta día de CONFIRMACIÓN
+        fechaContabilizar = new Date(pedido.fecha_boleta);
+        console.log(`💰 Transferencia CONFIRMADA: ${pedido.nombre} - $${pedido.total} cuenta para ${fechaContabilizar.toLocaleDateString('es-CL')}`);
+      } else if (metodo === 'TG') {
+        // CASO 2: TG (Transferencia Pagada) → cuenta día cuando se CONFIRMÓ el pago
+        if (pedido.fecha_boleta) {
+          // fecha_boleta puede venir como "YYYY-MM-DD" (parsear como local para evitar bug de UTC)
+          const fb = pedido.fecha_boleta;
+          fechaContabilizar = fb.length === 10
+            ? new Date(fb + 'T00:00:00')
+            : new Date(fb);
+          console.log(`✅ Transferencia PAGADA con fecha_boleta: ${pedido.nombre} - $${pedido.total} cuenta para ${fechaContabilizar.toLocaleDateString('es-CL')}`);
+        } else if (pedido.updated_at) {
+          // Usar fecha de actualización (cuando se marcó como entregado/pagado)
+          fechaContabilizar = new Date(pedido.updated_at);
+          console.log(`✅ Transferencia PAGADA (updated_at): ${pedido.nombre} - $${pedido.total} cuenta para ${fechaContabilizar.toLocaleDateString('es-CL')}`);
+        } else {
+          // Fallback a fecha del pedido
+          fechaContabilizar = new Date(pedido.fecha + 'T00:00:00');
+          console.log(`✅ Transferencia PAGADA (fecha): ${pedido.nombre} - $${pedido.total} cuenta para ${fechaContabilizar.toLocaleDateString('es-CL')}`);
+        }
+      } else if (metodo === 'TP' || metodo === 'T') {
+        // CASO 3: TP sin confirmar → SÍ aparece en resumen (sección Pendientes) pero NO suma al chofer
+        fechaContabilizar = new Date(pedido.fecha + 'T00:00:00');
+        console.log(`⏳ Transferencia PENDIENTE: ${pedido.nombre} - $${pedido.total} aparece en resumen pero no suma a rendir`);
+      } else {
+        // CASO 4: Otros métodos (E, DC) → cuenta día de ENTREGA
+        fechaContabilizar = new Date(pedido.fecha + 'T00:00:00');
+      }
+      
+      // Filtrar por rango de fechas
+      if (fechaContabilizar < desde || fechaContabilizar >= hasta) return;
       
       // Compatibilidad: intentar obtener el total de diferentes campos
       let total = 0;
@@ -5257,9 +5300,13 @@ function actualizarResumenCaja(datos = datosLocal, filtro = 'hoy') {
               totalVentaLocal += total;
               break;
             case 'TG':    // Transferencia Pagada
-            case 'P':     // Pagado (compatibilidad)
               totalPagados += total;
               cantidadPagados++;
+              totalVentaLocal += total;
+              break;
+            case 'P':     // Pagado genérico (NO es transferencia, va a efectivo)
+              totalEfectivo += total;
+              cantidadEfectivo++;
               totalVentaLocal += total;
               break;
             default:
@@ -6524,6 +6571,11 @@ function toggleMenuAcciones(menuElement, buttonElement) {
   if (isVisible) {
     menuElement.style.display = 'none';
   } else {
+    // SOLUCIÓN: Mover el menú al body para evitar conflictos de z-index
+    if (!menuElement.parentElement || menuElement.parentElement.tagName !== 'BODY') {
+      document.body.appendChild(menuElement);
+    }
+    
     // Calcular posición del botón - MENÚ HACIA LA IZQUIERDA Y ARRIBA
     const button = buttonElement || menuElement.previousElementSibling;
     if (button) {
@@ -7138,8 +7190,8 @@ function obtenerRangoFechas(filtro) {
 function mostrarPedidosPorMetodo(tipo) {
   modalMetodoPagoTipo = tipo; // Guardar tipo actual
   
-  // El filtro del modal es independiente de la vista principal
-  // No sincronizar con filtroActual para permitir filtrado independiente
+  // NUEVO: Sincronizar filtro del modal con el filtro actual de la vista principal
+  modalMetodoPagoFiltro = filtroActual;
   
   const modal = document.getElementById('modalMetodoPago');
   const icono = document.getElementById('modalMetodoPagoIcono');
@@ -7173,7 +7225,7 @@ function mostrarPedidosPorMetodo(tipo) {
     pagadas: {
       icono: '✅',
       nombre: 'Transferencias Pagadas',
-      metodos: ['TG', 'P']
+      metodos: ['TG']
     }
   };
   
@@ -7189,7 +7241,16 @@ function mostrarPedidosPorMetodo(tipo) {
     btn.classList.remove('active');
     const filtroBtn = btn.getAttribute('data-filtro');
     
-    if (filtroBtn === modalMetodoPagoFiltro) {
+    // Mapear filtroActual a los filtros del modal
+    let filtroModalEquivalente = modalMetodoPagoFiltro;
+    
+    // Si filtroActual es 'manana' o una fecha específica, marcar 'hoy' por ahora
+    // (el modal no tiene botón para mañana o fecha específica, solo usa el filtro heredado)
+    if (modalMetodoPagoFiltro === 'manana' || modalMetodoPagoFiltro.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      filtroModalEquivalente = 'hoy'; // Los botones solo muestran hoy/semana/mes/todo
+    }
+    
+    if (filtroBtn === filtroModalEquivalente) {
       btn.classList.add('active');
     }
   });
@@ -7436,40 +7497,6 @@ document.addEventListener('DOMContentLoaded', () => {
     modalMetodoPago.addEventListener('click', (e) => {
       if (e.target === modalMetodoPago) {
         cerrarModalMetodoPago();
-      }
-    });
-  }
-});
-
-// ==================================================
-// EVENT LISTENERS: SISTEMA DE DESCUENTO
-// ==================================================
-document.addEventListener('DOMContentLoaded', () => {
-  // Botón aplicar descuento
-  const btnAplicarDescuento = document.getElementById('btnAplicarDescuento');
-  if (btnAplicarDescuento) {
-    btnAplicarDescuento.addEventListener('click', aplicarDescuento);
-  }
-  
-  // Botón quitar descuento
-  const btnQuitarDescuento = document.getElementById('btnQuitarDescuento');
-  if (btnQuitarDescuento) {
-    btnQuitarDescuento.addEventListener('click', quitarDescuento);
-  }
-  
-  // Cambiar label al cambiar tipo de descuento
-  const tipoDescuentoSelect = document.getElementById('tipoDescuento');
-  if (tipoDescuentoSelect) {
-    tipoDescuentoSelect.addEventListener('change', cambiarTipoDescuento);
-  }
-  
-  // Aplicar descuento al presionar Enter en el input
-  const valorDescuentoInput = document.getElementById('valorDescuento');
-  if (valorDescuentoInput) {
-    valorDescuentoInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        aplicarDescuento();
       }
     });
   }
