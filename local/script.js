@@ -5254,26 +5254,33 @@ function actualizarResumenCaja(datos = datosLocal, filtro = 'hoy') {
           if (efectivoMatch) {
             const montoEfectivo = parseInt(efectivoMatch[1].replace(/[,\.]/g, '')) || 0;
             totalEfectivo += montoEfectivo;
-            cantidadEfectivo++;
+            efectivoEnMixtos += montoEfectivo;
+            // NO incrementar cantidadEfectivo: el pedido se cuenta en Pago Mixto
           }
           
           if (tarjetaMatch) {
             const montoTarjeta = parseInt(tarjetaMatch[1].replace(/[,\.]/g, '')) || 0;
             totalTarjetas += montoTarjeta;
-            cantidadTarjetas++;
+            // NO incrementar cantidadTarjetas: el pedido se cuenta en Pago Mixto
           }
           
           // Si la transferencia está PAGADA, va a "Transf. Pagadas"
           if (transferenciaPagadaMatch) {
             const montoTransferencia = parseInt(transferenciaPagadaMatch[1].replace(/[,\.]/g, '')) || 0;
             totalPagados += montoTransferencia;
-            cantidadPagados++;
+            transferenciaEnMixtos += montoTransferencia;
+            // NO incrementar cantidadPagados
           } else if (transferenciaMatch) {
             // Si está pendiente, va a "Transf. Pendientes"
             const montoTransferencia = parseInt(transferenciaMatch[1].replace(/[,\.]/g, '')) || 0;
             totalTransferencias += montoTransferencia;
-            cantidadTransferencias++;
+            transferenciaEnMixtos += montoTransferencia;
+            // NO incrementar cantidadTransferencias
           }
+          
+          // Contar el pedido completo en Pago Mixto
+          totalMixtosPendientes += total;
+          cantidadMixtosPendientes++;
           
           totalVentaLocal += total;
         }
@@ -5304,15 +5311,11 @@ function actualizarResumenCaja(datos = datosLocal, filtro = 'hoy') {
               cantidadPagados++;
               totalVentaLocal += total;
               break;
-            case 'P':     // Pagado genérico (NO es transferencia, va a efectivo)
-              totalEfectivo += total;
-              cantidadEfectivo++;
+            case 'P':     // Pagado genérico: suma al Total Local pero NO a efectivo (no es cobro físico)
               totalVentaLocal += total;
               break;
             default:
-              // Método desconocido: asumir efectivo
-              totalEfectivo += total;
-              cantidadEfectivo++;
+              // Método desconocido: suma al Total Local pero no a ningún contador específico
               totalVentaLocal += total;
           }
         }
@@ -7268,51 +7271,25 @@ function mostrarPedidosPorMetodo(tipo) {
     if (fechaPedido < desde || fechaPedido >= hasta) return false;
     
     const metodo = pedido.metodo_pago || 'E';
-    const notas = pedido.notas || ''; // Definir notas al inicio
-    
-    // NUEVO: Caso especial para Pagos Mixtos (categoría separada)
-    if (tipo === 'mixtos') {
-      return metodo === 'PM' || metodo === 'PMP';
-    }
-    
-    // Caso especial: Pago Mixto - EXCLUIR de otras categorías
-    if (metodo === 'PM' || metodo === 'PMP') {
-      return false; // Ya no aparecen en efectivo, pendientes ni pagadas
-    }
-    
-    // Compatibilidad con pagos mixtos antiguos (con emojis)
-    if (typeof notas === 'string' && (notas.includes('💰 PAGO MIXTO:') || notas.includes('PAGO MIXTO:'))) {
-      if (tipo === 'mixtos') return true;
-      return false; // Excluir de otras categorías
-    }
-    
-    // Pagos simples
+    const notas = pedido.notas || '';
+
+    // Detectar si es pago mixto (por código PM/PMP o por notas)
+    const esMixto = metodo === 'PM' || metodo === 'PMP' ||
+      (typeof notas === 'string' && (notas.includes('💰 PAGO MIXTO:') || notas.includes('PAGO MIXTO:')));
+
+    // Todo pago mixto va SOLO a la tarjeta Pago Mixto, nunca a efectivo/tarjetas/transferencias
+    if (esMixto) return tipo === 'mixtos';
+
+    // Pagos simples: el modal solo muestra métodos exactos del config
     return cfg.metodos.includes(metodo);
   });
   
   // Calcular totales
   let totalMonto = 0;
   pedidosFiltrados.forEach(pedido => {
-    const metodo = pedido.metodo_pago || 'E';
     const total = parseInt(pedido.total) || 0;
-    const notas = pedido.notas || '';
-    
-    // NUEVO: Pago Mixto - calcular total completo cuando tipo === 'mixtos'
-    if (metodo === 'PM' || metodo === 'PMP') {
-      if (tipo === 'mixtos') {
-        totalMonto += total; // Total completo del pedido
-      }
-    }
-    // Pagos mixtos antiguos
-    else if (typeof notas === 'string' && (notas.includes('💰 PAGO MIXTO:') || notas.includes('PAGO MIXTO:'))) {
-      if (tipo === 'mixtos') {
-        totalMonto += total;
-      }
-    }
-    // Pagos simples
-    else {
-      totalMonto += total;
-    }
+    // Todos los pedidos ya están filtrados correctamente — sumar total completo
+    totalMonto += total;
   });
   
   // Actualizar stats
@@ -7337,20 +7314,28 @@ function mostrarPedidosPorMetodo(tipo) {
       let montoMostrar = total;
       let etiquetaExtra = '';
       
-      // NUEVO: Para pagos mixtos, mostrar desglose completo
+      // Para pagos mixtos: mostrar desglose en el listado
       if (metodo === 'PM' || metodo === 'PMP') {
+        // Formato moderno (monto en notas con patrón numérico)
         const patronNumero = /(\d+[\.,]?\d*)\s*(?:efectivo|efec|pesos|$)/i;
         const match = notas.match(patronNumero);
-        
         if (match) {
           const montoEfectivo = parseInt(match[1].replace(/[,\.]/g, '')) || 0;
           const montoTransferencia = total - montoEfectivo;
-          
-          if (tipo === 'mixtos') {
-            montoMostrar = total;
-            etiquetaExtra = ` <span style="font-size:0.75rem;color:#6b7280;"><br>💵 Efectivo: $${montoEfectivo.toLocaleString('es-CL')}<br>🔄 Transf: $${montoTransferencia.toLocaleString('es-CL')} ${metodo === 'PM' ? '⏳' : '✅'}</span>`;
-          }
+          etiquetaExtra = ` <span style="font-size:0.75rem;color:#6b7280;"><br>💵 Efectivo: $${montoEfectivo.toLocaleString('es-CL')}<br>🔄 Transf: $${montoTransferencia.toLocaleString('es-CL')} ${metodo === 'PM' ? '⏳' : '✅'}</span>`;
         }
+      } else if (typeof notas === 'string' && (notas.includes('💰 PAGO MIXTO:') || notas.includes('PAGO MIXTO:'))) {
+        // Formato antiguo (montos en notas con emojis)
+        const efMatch = notas.match(/💵 Efectivo: \$?([\d,.]+)/);
+        const tarjMatch = notas.match(/💳 Tarjeta: \$?([\d,.]+)/);
+        const transfMatch = notas.match(/🔄 Transferencia: \$?([\d,.]+)/);
+        const transfPagMatch = notas.match(/✅ Transferencia PAGADA: \$?([\d,.]+)/);
+        const partes = [];
+        if (efMatch) partes.push(`💵 Efectivo: $${parseInt(efMatch[1].replace(/[,.]/g,'')).toLocaleString('es-CL')}`);
+        if (tarjMatch) partes.push(`💳 Tarjeta: $${parseInt(tarjMatch[1].replace(/[,.]/g,'')).toLocaleString('es-CL')}`);
+        if (transfPagMatch) partes.push(`✅ Transf: $${parseInt(transfPagMatch[1].replace(/[,.]/g,'')).toLocaleString('es-CL')}`);
+        else if (transfMatch) partes.push(`🔄 Transf: $${parseInt(transfMatch[1].replace(/[,.]/g,'')).toLocaleString('es-CL')} ⏳`);
+        if (partes.length) etiquetaExtra = ` <span style="font-size:0.75rem;color:#6b7280;"><br>${partes.join('<br>')}</span>`;
       }
       
       // Productos resumidos
