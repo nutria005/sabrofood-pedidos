@@ -889,9 +889,38 @@ const METODOS = {
   'DC': 'Débito/Crédito', 
   'TP': 'Transf. Pendiente', 
   'TG': 'Transf. Pagada',
+  'PE': 'Pagado Local - Efectivo',
+  'PC': 'Pagado Local - Tarjeta',
+  'PX': 'Pagado Local - Mixto',
   'PM': 'Pago Mixto (Pendiente)',
   'PMP': 'Pago Mixto (Pagado)'
 };
+
+/** Muestra/oculta el sub-panel de desglose para PX (Pagado Local Mixto) */
+function togglePanelPagoLocal() {
+  const metodo = document.getElementById('metodoPago')?.value;
+  const panel = document.getElementById('panelPagoLocalMixto');
+  if (panel) {
+    panel.style.display = metodo === 'PX' ? 'block' : 'none';
+    if (metodo === 'PX') actualizarTotalPX();
+  }
+}
+
+/** Valida que los montos PX sumen al total del pedido */
+function actualizarTotalPX() {
+  const ef = parseFloat(document.getElementById('pxEfectivo')?.value) || 0;
+  const tk = parseFloat(document.getElementById('pxTarjeta')?.value) || 0;
+  const total = ef + tk;
+  const validacion = document.getElementById('pxValidacion');
+  if (!validacion) return;
+  if (total === 0) {
+    validacion.textContent = '';
+    validacion.style.color = '#6b7280';
+  } else {
+    validacion.textContent = `Total registrado: $${total.toLocaleString('es-CL')}`;
+    validacion.style.color = '#166534';
+  }
+}
 let lineasPedido = [];
 
 // === SISTEMA DE DESCUENTOS ===
@@ -1150,23 +1179,40 @@ function activarTiempoRealCarga() {
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           if (payload.new?.marcado) {
             itemsMarcadosCache.add(checkboxId);
+            const compatKey = crearClaveCompatibilidadCarga(payload.new?.pedido_id, payload.new || {});
+            itemsMarcadosDetalleCache.set(compatKey, checkboxId);
           } else {
             itemsMarcadosCache.delete(checkboxId);
+            const compatKey = crearClaveCompatibilidadCarga(payload.new?.pedido_id, payload.new || {});
+            itemsMarcadosDetalleCache.delete(compatKey);
           }
         } else if (payload.eventType === 'DELETE') {
           itemsMarcadosCache.delete(checkboxId);
+          const compatKey = crearClaveCompatibilidadCarga(payload.old?.pedido_id, payload.old || {});
+          itemsMarcadosDetalleCache.delete(compatKey);
         }
         
         // Actualizar UI si el modal está abierto
         const modal = document.getElementById('modalCarga');
         if (modal && modal.style.display === 'flex') {
-          const checkbox = document.getElementById(checkboxId);
-          const itemCarga = checkbox?.closest('.item-carga');
+          const itemCarga = buscarItemCargaPorPersistencia(checkboxId);
+          const checkbox = itemCarga?.querySelector('.checkbox-carga');
           
           if (checkbox && itemCarga) {
-            const estaMarcado = itemsMarcadosCache.has(checkboxId);
+            const checkboxActualId = itemCarga.dataset.checkboxId;
+            const legacyCheckboxId = itemCarga.dataset.legacyCheckboxId;
+            const compatKey = itemCarga.dataset.compatKey;
+            const persistedCheckboxId = itemsMarcadosCache.has(checkboxActualId)
+              ? checkboxActualId
+              : (legacyCheckboxId && itemsMarcadosCache.has(legacyCheckboxId)
+                ? legacyCheckboxId
+                : (compatKey && itemsMarcadosDetalleCache.has(compatKey)
+                  ? itemsMarcadosDetalleCache.get(compatKey)
+                  : ''));
+            const estaMarcado = Boolean(persistedCheckboxId);
             checkbox.checked = estaMarcado;
             itemCarga.classList.toggle('checked', estaMarcado);
+            itemCarga.dataset.persistedCheckboxId = persistedCheckboxId;
             console.log(`✅ Checkbox ${checkboxId} actualizado en UI: ${estaMarcado}`);
           }
         }
@@ -1477,14 +1523,32 @@ async function guardarPedido() {
     }
 
     // Construir objeto pedido con datos validados
+    const metodoPagoSeleccionado = metodoEl.value || 'E';
+    let notasPedido = validaciones.nota.valor;
+
+    // Si es PX (Pagado Local Mixto), agregar desglose de montos a las notas
+    if (metodoPagoSeleccionado === 'PX') {
+      const efPX = parseFloat(document.getElementById('pxEfectivo')?.value) || 0;
+      const tkPX = parseFloat(document.getElementById('pxTarjeta')?.value) || 0;
+      if (efPX + tkPX === 0) {
+        ErrorHandler.mostrarError('⚠️ Para Pagado Local Mixto debes ingresar los montos de efectivo y/o tarjeta.');
+        return;
+      }
+      const partesPX = [];
+      if (efPX > 0) partesPX.push(`💵 Efectivo: $${efPX.toLocaleString('es-CL')}`);
+      if (tkPX > 0) partesPX.push(`💳 Tarjeta: $${tkPX.toLocaleString('es-CL')}`);
+      const detallePX = `💰 PAGADO LOCAL MIXTO: ${partesPX.join(', ')}`;
+      notasPedido = notasPedido ? `${detallePX} | ${notasPedido}` : detallePX;
+    }
+
     const pedido = {
       id: generarId(),
       nombre: validaciones.nombre.valor,
       direccion: validaciones.direccion.valor,
       telefono: validaciones.telefono.valor,
       fecha: validaciones.fecha.valor,
-      metodo_pago: metodoEl.value || 'E',
-      notas: validaciones.nota.valor,
+      metodo_pago: metodoPagoSeleccionado,
+      notas: notasPedido,
       total: Math.max(0, subtotalSinDescuento - descuentoAplicado), // Total con descuento aplicado
       entregado: false,
       prioridad: rutaEl.value || 'C', // Prioridad desde selector de ruta (por defecto C)
@@ -1933,9 +1997,16 @@ async function toggleEntregado(docId, estadoActual, btnElement = null) {
       
       const metodoPago = pedido.metodo_pago || 'E';
       
-      // Si ya es TG (Transferencia Pagada), entregar directamente sin modal
-      // No se necesita confirmar pago porque ya está confirmada la transferencia
-      if (metodoPago === 'TG') {
+      // Si ya es TG o "Pagado en local" (PE/PC/PX/P), entregar directamente sin modal
+      // El pago ya ocurrió en el local — el repartidor solo hace la entrega física
+      const metodosDirectos = {
+        'TG': '✅ Pedido entregado - Transferencia ya confirmada',
+        'P':  '✅ Pedido entregado - Ya estaba pagado en el local',
+        'PE': '✅ Pedido entregado - Pagado en local (Efectivo)',
+        'PC': '✅ Pedido entregado - Pagado en local (Tarjeta)',
+        'PX': '✅ Pedido entregado - Pagado en local (Mixto)'
+      };
+      if (metodosDirectos[metodoPago]) {
         const { error: errEntrega } = await supabase_client
           .from('pedidos')
           .update({ entregado: true, updated_at: new Date().toISOString() })
@@ -1947,7 +2018,7 @@ async function toggleEntregado(docId, estadoActual, btnElement = null) {
           btnElement.innerHTML = textoOriginal;
           btnElement.style.opacity = '1';
         }
-        ErrorHandler.mostrarExito('✅ Pedido entregado - Transferencia ya confirmada');
+        ErrorHandler.mostrarExito(metodosDirectos[metodoPago]);
         cargarPedidos();
         return;
       }
@@ -2091,6 +2162,39 @@ async function abrirModalConfirmacionPago(docId) {
               </div>
             </div>
             
+            <div id="pagoLocalDetalle" class="pago-local-detalle" style="display: none; margin-top: 12px; padding: 12px; background: #f0fdf4; border-radius: 8px; border: 1px solid #bbf7d0;">
+              <h5 style="margin: 0 0 10px 0; color: #166534;">💰 ¿Cómo pagó en el local?</h5>
+              <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600;">
+                  <input type="radio" name="metodoLocalPago" value="efectivo" checked>
+                  💵 Efectivo
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600;">
+                  <input type="radio" name="metodoLocalPago" value="tarjeta">
+                  💳 Tarjeta
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600;">
+                  <input type="radio" name="metodoLocalPago" value="mixto">
+                  🔀 Mixto
+                </label>
+              </div>
+              <div id="pagoLocalMixtoDetalle" style="display: none; margin-top: 10px; padding: 10px; background: #fff; border-radius: 6px; border: 1px solid #d1fae5;">
+                <p style="margin: 0 0 8px 0; font-size: 0.9rem; color: #374151;">Distribuye el total de $${pedido.total?.toLocaleString('es-CL') || '0'}:</p>
+                <div class="mixto-item">
+                  <label>💵 Efectivo local: $</label>
+                  <input type="number" id="montoLocalEfectivo" min="0" value="0" step="1000">
+                </div>
+                <div class="mixto-item">
+                  <label>💳 Tarjeta local: $</label>
+                  <input type="number" id="montoLocalTarjeta" min="0" value="0" step="1000">
+                </div>
+                <div class="mixto-total">
+                  <strong>Total: $<span id="totalLocalMixto">0</span></strong>
+                  <span id="validacionLocalMixto" class="validacion-mixto"></span>
+                </div>
+              </div>
+            </div>
+            
             <div class="notas-pago">
               <label for="notasPago">📝 Observaciones (opcional):</label>
               <textarea id="notasPago" placeholder="Ej: Cliente pidió vuelto de $10.000, se le entregó factura, etc."></textarea>
@@ -2122,6 +2226,7 @@ function setupModalPagoEvents(docId, pedido) {
   const modal = document.getElementById('modalPago');
   const radioButtons = document.querySelectorAll('input[name="metodoPagoReal"]');
   const pagoMixtoDetalle = document.getElementById('pagoMixtoDetalle');
+  const pagoLocalDetalle = document.getElementById('pagoLocalDetalle');
   
   // Cerrar modal
   document.getElementById('cerrarModalPago').onclick = () => modal.remove();
@@ -2132,12 +2237,57 @@ function setupModalPagoEvents(docId, pedido) {
     radio.addEventListener('change', () => {
       if (radio.value === 'mixto') {
         pagoMixtoDetalle.style.display = 'block';
+        pagoLocalDetalle.style.display = 'none';
         actualizarTotalMixto();
+      } else if (radio.value === 'pagado') {
+        pagoLocalDetalle.style.display = 'block';
+        pagoMixtoDetalle.style.display = 'none';
       } else {
         pagoMixtoDetalle.style.display = 'none';
+        pagoLocalDetalle.style.display = 'none';
       }
     });
   });
+
+  // Toggle sub-panel mixto dentro de "pagado local"
+  document.addEventListener('change', (e) => {
+    if (e.target.name === 'metodoLocalPago') {
+      const subPanel = document.getElementById('pagoLocalMixtoDetalle');
+      if (subPanel) {
+        subPanel.style.display = e.target.value === 'mixto' ? 'block' : 'none';
+        if (e.target.value === 'mixto') actualizarTotalLocalMixto();
+      }
+    }
+  });
+
+  // Actualizar total en pago mixto local
+  function actualizarTotalLocalMixto() {
+    const ef = parseFloat(document.getElementById('montoLocalEfectivo')?.value) || 0;
+    const tk = parseFloat(document.getElementById('montoLocalTarjeta')?.value) || 0;
+    const total = ef + tk;
+    const spanTotal = document.getElementById('totalLocalMixto');
+    const spanVal = document.getElementById('validacionLocalMixto');
+    const totalPedido = pedido.total || 0;
+    if (spanTotal) spanTotal.textContent = total.toLocaleString('es-CL');
+    if (spanVal) {
+      const diff = Math.abs(total - totalPedido);
+      if (diff < 1 && total > 0) {
+        spanTotal.style.color = '#10b981';
+        spanVal.textContent = '✅ Correcto';
+        spanVal.style.color = '#10b981';
+      } else if (total === 0) {
+        spanTotal.style.color = '#6b7280';
+        spanVal.textContent = '';
+      } else {
+        spanTotal.style.color = '#dc2626';
+        spanVal.textContent = `❌ Falta $${(totalPedido - total).toLocaleString('es-CL')}`;
+        spanVal.style.color = '#dc2626';
+      }
+    }
+  }
+
+  document.getElementById('montoLocalEfectivo')?.addEventListener('input', actualizarTotalLocalMixto);
+  document.getElementById('montoLocalTarjeta')?.addEventListener('input', actualizarTotalLocalMixto);
   
   // Actualizar total en pago mixto
   function actualizarTotalMixto() {
@@ -2238,9 +2388,27 @@ async function confirmarEntregaPago(docId, pedido) {
       case 'transferencia':
         metodoPagoFinal = 'TP'; // Transferencia Pendiente - NO suma a caja (va al banco)
         break;
-      case 'pagado':
-        metodoPagoFinal = 'P'; // Pagado en local - Monto $0, NO suma a caja
+      case 'pagado': {
+        // Pagado en local — leer sub-método seleccionado
+        const subMetodoLocal = document.querySelector('input[name="metodoLocalPago"]:checked')?.value || 'efectivo';
+        if (subMetodoLocal === 'mixto') {
+          const efLocal = parseFloat(document.getElementById('montoLocalEfectivo').value) || 0;
+          const tkLocal = parseFloat(document.getElementById('montoLocalTarjeta').value) || 0;
+          const totalPedido = pedido.total || 0;
+          if (Math.abs((efLocal + tkLocal) - totalPedido) > 1) {
+            alert(`⚠️ El total del pago mixto local ($${(efLocal + tkLocal).toLocaleString('es-CL')}) no coincide con el pedido ($${totalPedido.toLocaleString('es-CL')}). Ajusta los montos.`);
+            return;
+          }
+          metodoPagoFinal = 'PX'; // Pagado Local - Mixto
+          const detallesLocal = [];
+          if (efLocal > 0) detallesLocal.push(`💵 Efectivo: $${efLocal.toLocaleString('es-CL')}`);
+          if (tkLocal > 0) detallesLocal.push(`💳 Tarjeta: $${tkLocal.toLocaleString('es-CL')}`);
+          notasFinales = `💰 PAGADO LOCAL MIXTO: ${detallesLocal.join(', ')}${notasPago ? ` | ${notasPago}` : ''}`;
+        } else {
+          metodoPagoFinal = subMetodoLocal === 'tarjeta' ? 'PC' : 'PE';
+        }
         break;
+      }
       default:
         metodoPagoFinal = 'E'; // Por defecto efectivo
     }
@@ -2285,6 +2453,9 @@ function obtenerNombreMetodoPago(codigo) {
     'TP': '⏳ Transf. Pendiente',
     'TG': '✅ Transf. Pagada',
     'P': '💰 Pagado',
+    'PE': '💵 Pagado Local - Efectivo',
+    'PC': '💳 Pagado Local - Tarjeta',
+    'PX': '🔀 Pagado Local - Mixto',
     'efectivo': '💵 Efectivo',
     'tarjeta': '💳 Tarjeta',
     'transferencia': '🔄 Transferencia',
@@ -4707,7 +4878,10 @@ function buscarPedidos() {
         'DC': 'debito credito tarjeta card dc',
         'TP': 'transferencia pendiente transf por pagar tp',
         'TG': 'transferencia pagada transf paga confirmada tg pagado',
-        'P': 'pagado pago p transferencia'
+        'P': 'pagado pago p local',
+        'PE': 'pagado local efectivo pe',
+        'PC': 'pagado local tarjeta pc',
+        'PX': 'pagado local mixto px'
       };
       metodoPagoText += ' ' + (variantes[metodoCodigo] || metodoCodigo.toLowerCase());
     }
@@ -5311,7 +5485,10 @@ function actualizarResumenCaja(datos = datosLocal, filtro = 'hoy') {
               cantidadPagados++;
               totalVentaLocal += total;
               break;
-            case 'P':     // Pagado genérico: suma al Total Local pero NO a efectivo (no es cobro físico)
+            case 'P':     // Pagado genérico (legacy): suma al Total Local pero NO a efectivo (no es cobro físico)
+            case 'PE':    // Pagado Local - Efectivo: el dinero ya está en el local
+            case 'PC':    // Pagado Local - Tarjeta: el cargo ya fue procesado en el local
+            case 'PX':    // Pagado Local - Mixto: combinación ef + tarjeta en el local
               totalVentaLocal += total;
               break;
             default:
@@ -5451,7 +5628,7 @@ function actualizarResumenCaja(datos = datosLocal, filtro = 'hoy') {
 // Función para obtener el texto del precio según el método de pago
 function obtenerTextoVenta(pedido) {
   // Si es transferencia pagada o método pagado
-  if (pedido.metodo_pago === 'TG' || pedido.metodo_pago === 'P') {
+  if (pedido.metodo_pago === 'TG' || pedido.metodo_pago === 'P' || pedido.metodo_pago === 'PE' || pedido.metodo_pago === 'PC' || pedido.metodo_pago === 'PX') {
     const total = parseInt(pedido.total) || 0;
     
     if (pedido.metodo_pago === 'TG') {
@@ -5460,12 +5637,19 @@ function obtenerTextoVenta(pedido) {
         return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO Transferencia $${total.toLocaleString('es-CL')}</span>`;
       }
       return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO Transferencia</span>`;
-    } else {
-      // Método 'P' (Pagado): mostrar solo "PAGADO" sin duplicar
+    } else if (pedido.metodo_pago === 'PX') {
+      // Pagado Local - Mixto
       if (total > 0) {
-        return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO $${total.toLocaleString('es-CL')}</span>`;
+        return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO 🔀 Mixto $${total.toLocaleString('es-CL')}</span>`;
       }
-      return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO</span>`;
+      return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO 🔀 Mixto</span>`;
+    } else {
+      // Métodos P / PE / PC (Pagado en local): mostrar "PAGADO" con indicador de método
+      const iconoMetodo = pedido.metodo_pago === 'PC' ? '💳' : '💵';
+      if (total > 0) {
+        return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO ${iconoMetodo} $${total.toLocaleString('es-CL')}</span>`;
+      }
+      return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO ${iconoMetodo}</span>`;
     }
   }
   
@@ -5814,6 +5998,55 @@ function normalizarPedidoId(pedidoId) {
     .replace(/^_|_$/g, ''); // Limpiar inicio/final
 }
 
+function crearCheckboxIdLegacy(pedidoId, nombreProducto) {
+  return `chk_${normalizarPedidoId(pedidoId)}_${normalizarNombreProducto(nombreProducto)}`;
+}
+
+function crearCheckboxIdCarga(pedidoId, item, itemIndex = 0) {
+  const nombreProducto = item?.nombre || 'producto_sin_nombre';
+  const productoToken = item?.producto_id ? `prod_${item.producto_id}` : 'manual';
+  return `chk_${normalizarPedidoId(pedidoId)}_${productoToken}_${itemIndex}_${normalizarNombreProducto(nombreProducto)}`;
+}
+
+function buscarItemCargaPorPersistencia(checkboxId) {
+  if (!checkboxId) return null;
+
+  return document.querySelector(
+    `.item-carga[data-checkbox-id="${checkboxId}"], ` +
+    `.item-carga[data-legacy-checkbox-id="${checkboxId}"], ` +
+    `.item-carga[data-persisted-checkbox-id="${checkboxId}"]`
+  );
+}
+
+function crearClaveCompatibilidadCarga(pedidoId, item = {}) {
+  const pedidoToken = normalizarPedidoId(pedidoId);
+  const cantidad = parseInt(item.cantidad) || 0;
+
+  if (item.producto_id || item.productoId) {
+    return `ped_${pedidoToken}_prod_${item.producto_id || item.productoId}_cant_${cantidad}`;
+  }
+
+  return `ped_${pedidoToken}_nom_${normalizarNombreProducto(item.nombre || item.nombre_producto || '')}_cant_${cantidad}`;
+}
+
+function obtenerCheckboxPersistido(item, itemsMarcados) {
+  if (!item) return '';
+
+  if (itemsMarcados.has(item.checkboxId)) {
+    return item.checkboxId;
+  }
+
+  if (item.legacyCheckboxId && itemsMarcados.has(item.legacyCheckboxId)) {
+    return item.legacyCheckboxId;
+  }
+
+  if (item.compatKey && itemsMarcadosDetalleCache.has(item.compatKey)) {
+    return itemsMarcadosDetalleCache.get(item.compatKey) || '';
+  }
+
+  return '';
+}
+
 /**
  * Generar resumen de carga desde los pedidos visibles
  * AGRUPADO POR PRIORIDAD (Ruta A, B, C)
@@ -5843,7 +6076,7 @@ function generarResumenCarga() {
     const pedidoId = pedido.id;
     
     // Procesar items del pedido - CADA UNO GENERA UNA LÍNEA INDEPENDIENTE
-    for (const item of pedido.items) {
+    for (const [itemIndex, item] of pedido.items.entries()) {
       const nombreProducto = item.nombre || 'Producto sin nombre';
       const cantidad = parseInt(item.cantidad) || 1;
       const productoId = item.producto_id || null; // ID del producto para descuento de stock
@@ -5855,8 +6088,9 @@ function generarResumenCarga() {
         cliente: nombreCliente,
         pedidoId: pedidoId,
         productoId: productoId, // ⚡ INCLUIR PARA DESCUENTO DE STOCK
-        // ID único para checkbox: pedido + producto (con caracteres válidos para HTML)
-        checkboxId: `chk_${normalizarPedidoId(pedidoId)}_${normalizarNombreProducto(nombreProducto)}`
+        checkboxId: crearCheckboxIdCarga(pedidoId, item, itemIndex),
+        legacyCheckboxId: crearCheckboxIdLegacy(pedidoId, nombreProducto),
+        compatKey: crearClaveCompatibilidadCarga(pedidoId, item)
       });
     }
   }
@@ -5965,7 +6199,10 @@ async function mostrarModalCarga() {
       for (const item of d.items) {
         // Usar el checkboxId único generado en generarResumenCarga
         const checkboxId = item.checkboxId || `check-${idx}`;
-        const estaMarcado = itemsMarcados.has(checkboxId);
+        const legacyCheckboxId = item.legacyCheckboxId || '';
+        const compatKey = item.compatKey || '';
+        const persistedCheckboxId = obtenerCheckboxPersistido(item, itemsMarcados);
+        const estaMarcado = Boolean(persistedCheckboxId);
         const checked = estaMarcado ? 'checked' : '';
         const checkedClass = estaMarcado ? ' checked' : '';
         
@@ -5979,6 +6216,9 @@ async function mostrarModalCarga() {
         items += `
           <div class="item-carga${checkedClass}" 
                data-checkbox-id="${checkboxId}"
+            data-legacy-checkbox-id="${legacyCheckboxId}"
+            data-persisted-checkbox-id="${persistedCheckboxId}"
+               data-compat-key="${compatKey}"
                data-producto-id="${item.productoId || ''}"
                data-cantidad="${item.cantidad}"
                data-nombre="${item.nombre}"
@@ -6023,6 +6263,7 @@ async function handleCheckboxChange(event) {
     
     if (itemCarga) {
       const checkboxId = itemCarga.dataset.checkboxId;
+      const persistedCheckboxId = itemCarga.dataset.persistedCheckboxId || checkboxId;
       const checked = checkbox.checked;
       
       // 🔒 DESHABILITAR checkbox para prevenir doble clic
@@ -6059,13 +6300,15 @@ async function handleCheckboxChange(event) {
           }
           
           await agregarItemMarcado(checkboxId, itemInfo);
+          itemCarga.dataset.persistedCheckboxId = checkboxId;
           
           // 🔄 ACTUALIZAR catálogo local después de descontar
           if (itemInfo.productoId) {
             actualizarStockLocal(itemInfo.productoId, -itemInfo.cantidad);
           }
         } else {
-          await eliminarItemMarcado(checkboxId);
+          await eliminarItemMarcado(persistedCheckboxId);
+          itemCarga.dataset.persistedCheckboxId = '';
           
           // 🔄 ACTUALIZAR catálogo local después de devolver
           if (itemInfo.productoId) {
@@ -6159,6 +6402,39 @@ document.addEventListener('DOMContentLoaded', function() {
 // ========================================
 // Cache en memoria para items marcados (sincronizado con Supabase)
 let itemsMarcadosCache = new Set();
+let itemsMarcadosDetalleCache = new Map();
+const CARGA_LOCAL_STATE_KEY = 'sabrofood_carga_estado';
+
+function cargarEstadoLocalCarga() {
+  try {
+    return JSON.parse(localStorage.getItem(CARGA_LOCAL_STATE_KEY) || '{}');
+  } catch (error) {
+    console.error('Error al cargar estado local de carga:', error);
+    return {};
+  }
+}
+
+function guardarEstadoLocalCarga(estado) {
+  try {
+    localStorage.setItem(CARGA_LOCAL_STATE_KEY, JSON.stringify(estado));
+  } catch (error) {
+    console.error('Error al guardar estado local de carga:', error);
+  }
+}
+
+function aplicarOverridesLocalesCarga(itemsMarcados) {
+  const estadoLocal = cargarEstadoLocalCarga();
+
+  Object.entries(estadoLocal).forEach(([checkboxId, marcado]) => {
+    if (marcado) {
+      itemsMarcados.add(checkboxId);
+    } else {
+      itemsMarcados.delete(checkboxId);
+    }
+  });
+
+  return itemsMarcados;
+}
 
 /**
  * Cargar items marcados desde Supabase (TODOS LOS USUARIOS VEN LO MISMO)
@@ -6166,17 +6442,24 @@ let itemsMarcadosCache = new Set();
  */
 async function cargarItemsMarcados() {
   try {
+    const cacheLocal = aplicarOverridesLocalesCarga(new Set());
     const { data, error } = await supabase_client
       .from('carga_marcados')
-      .select('checkbox_id')
+      .select('checkbox_id, pedido_id, producto_id, cantidad, nombre_producto')
       .eq('marcado', true);
     
     if (error) {
       console.error('Error al cargar items marcados:', error);
+      itemsMarcadosCache = cacheLocal;
       return itemsMarcadosCache;
     }
     
-    itemsMarcadosCache = new Set(data.map(item => item.checkbox_id));
+    itemsMarcadosCache = aplicarOverridesLocalesCarga(new Set(data.map(item => item.checkbox_id)));
+    itemsMarcadosDetalleCache = new Map();
+    data.forEach((item) => {
+      const compatKey = crearClaveCompatibilidadCarga(item.pedido_id, item);
+      itemsMarcadosDetalleCache.set(compatKey, item.checkbox_id);
+    });
     return itemsMarcadosCache;
   } catch (e) {
     console.error('Error al cargar items marcados:', e);
@@ -6192,6 +6475,9 @@ async function cargarItemsMarcados() {
 async function agregarItemMarcado(checkboxId, itemInfo = null) {
   try {
     itemsMarcadosCache.add(checkboxId);
+    const estadoLocal = cargarEstadoLocalCarga();
+    estadoLocal[checkboxId] = true;
+    guardarEstadoLocalCarga(estadoLocal);
     
     const insertData = { 
       checkbox_id: checkboxId, 
@@ -6215,7 +6501,7 @@ async function agregarItemMarcado(checkboxId, itemInfo = null) {
     
     if (error) {
       console.error('Error al marcar item:', error);
-      itemsMarcadosCache.delete(checkboxId);
+      console.warn('⚠️ El item quedó guardado solo en este dispositivo');
       return;
     }
     
@@ -6509,6 +6795,9 @@ async function eliminarItemMarcado(checkboxId) {
     }
     
     itemsMarcadosCache.delete(checkboxId);
+    const estadoLocal = cargarEstadoLocalCarga();
+    estadoLocal[checkboxId] = false;
+    guardarEstadoLocalCarga(estadoLocal);
     
     const { error } = await supabase_client
       .from('carga_marcados')
@@ -6517,8 +6806,8 @@ async function eliminarItemMarcado(checkboxId) {
     
     if (error) {
       console.error('❌ Error al eliminar de carga_marcados:', error);
-      itemsMarcadosCache.add(checkboxId);
-      throw error;
+      console.warn('⚠️ El desmarcado quedó aplicado solo en este dispositivo');
+      return;
     }
     
     console.log('✅ Item desmarcado exitosamente');
@@ -6536,6 +6825,8 @@ async function eliminarItemMarcado(checkboxId) {
 async function limpiarItemsMarcados() {
   try {
     itemsMarcadosCache.clear();
+    itemsMarcadosDetalleCache.clear();
+    guardarEstadoLocalCarga({});
     const { error } = await supabase_client
       .from('carga_marcados')
       .delete()
@@ -7028,7 +7319,10 @@ function obtenerEmojiMetodoPago(metodo) {
     'DC': '💳 Tarjeta',
     'TP': '⏳ Transf. Pend.',
     'TG': '✅ Transf. Pagada',
-    'P': '💰 Pagado'
+    'P': '💰 Pagado',
+    'PE': '💵 Pagado Local - Efectivo',
+    'PC': '💳 Pagado Local - Tarjeta',
+    'PX': '🔀 Pagado Local - Mixto'
   };
   return metodos[metodo] || '❓ ' + metodo;
 }

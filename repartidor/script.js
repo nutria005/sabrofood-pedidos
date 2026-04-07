@@ -858,8 +858,162 @@ const METODOS = {
   'DC': 'Débito/Crédito', 
   'TP': 'Transf. Pendiente', 
   'TG': 'Transf. Pagada',
-  'P': 'Pagado'
+  'P': 'Pagado',
+  'PE': 'Pagado Local - Efectivo',
+  'PC': 'Pagado Local - Tarjeta',
+  'PX': 'Pagado Local - Mixto',
+  'PM': 'Pago Mixto (Pendiente)',
+  'PMP': 'Pago Mixto (Pagado)'
 };
+
+function normalizarMetodoPago(metodo) {
+  if (!metodo) return '';
+
+  const valor = String(metodo).trim();
+  if (METODOS[valor]) return valor;
+
+  const valorNormalizado = valor
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[()]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+
+  const equivalencias = {
+    'D': 'DC',
+    'C': 'DC',
+    'T': 'TP',
+    'EFECTIVO': 'E',
+    'DEBITO/CREDITO': 'DC',
+    'DEBITO / CREDITO': 'DC',
+    'TARJETA': 'DC',
+    'TRANSF. PENDIENTE': 'TP',
+    'TRANSFERENCIA PENDIENTE': 'TP',
+    'TRANSF. PAGADA': 'TG',
+    'TRANSFERENCIA PAGADA': 'TG',
+    'PAGADO': 'P',
+    'PAGADO LOCAL - EFECTIVO': 'PE',
+    'PAGADO LOCAL EFECTIVO': 'PE',
+    'PAGADO LOCAL - TARJETA': 'PC',
+    'PAGADO LOCAL TARJETA': 'PC',
+    'PAGADO LOCAL - MIXTO': 'PX',
+    'PAGADO LOCAL MIXTO': 'PX',
+    'PAGO MIXTO PENDIENTE': 'PM',
+    'PAGO MIXTO PAGADO': 'PMP'
+  };
+
+  return equivalencias[valorNormalizado] || valor;
+}
+
+function obtenerPresentacionCobroRepartidor(pedido) {
+  const metodo = normalizarMetodoPago(pedido?.metodo_pago || pedido?.metodo) || 'E';
+  const notas = typeof pedido?.notas === 'string' ? pedido.notas.toUpperCase() : '';
+
+  const esPagadoLocal = ['P', 'PE', 'PC', 'PX'].includes(metodo) || notas.includes('PAGADO LOCAL');
+  const esTransferenciaConfirmada = metodo === 'TG';
+  const esMixtoConfirmado = metodo === 'PMP' || (notas.includes('PAGO MIXTO') && notas.includes('TRANSFERENCIA PAGADA'));
+  const esMixtoPendiente = metodo === 'PM' || (notas.includes('PAGO MIXTO') && notas.includes('TRANSFERENCIA') && !notas.includes('TRANSFERENCIA PAGADA'));
+
+  if (esPagadoLocal) {
+    return {
+      estado: 'PAGADO',
+      detalle: 'Registrado en local',
+      icono: '✅',
+      esPagado: true,
+      estadoBg: '#dcfce7',
+      estadoColor: '#166534',
+      detalleBg: '#f3f4f6',
+      detalleColor: '#4b5563'
+    };
+  }
+
+  if (esTransferenciaConfirmada) {
+    return {
+      estado: 'PAGADO',
+      detalle: 'Transferencia confirmada',
+      icono: '✅',
+      esPagado: true,
+      estadoBg: '#dcfce7',
+      estadoColor: '#166534',
+      detalleBg: '#ecfeff',
+      detalleColor: '#155e75'
+    };
+  }
+
+  if (esMixtoConfirmado) {
+    return {
+      estado: 'PAGADO',
+      detalle: 'Mixto confirmado',
+      icono: '✅',
+      esPagado: true,
+      estadoBg: '#dcfce7',
+      estadoColor: '#166534',
+      detalleBg: '#f5f3ff',
+      detalleColor: '#6d28d9'
+    };
+  }
+
+  if (esMixtoPendiente) {
+    return {
+      estado: 'COBRAR',
+      detalle: 'Mixto pendiente',
+      icono: '🔀',
+      esPagado: false,
+      estadoBg: '#fef3c7',
+      estadoColor: '#92400e',
+      detalleBg: '#f5f3ff',
+      detalleColor: '#6d28d9'
+    };
+  }
+
+  switch (metodo) {
+    case 'E':
+      return {
+        estado: 'COBRAR',
+        detalle: 'Efectivo',
+        icono: '💵',
+        esPagado: false,
+        estadoBg: '#fef3c7',
+        estadoColor: '#92400e',
+        detalleBg: '#ecfdf5',
+        detalleColor: '#166534'
+      };
+    case 'DC':
+      return {
+        estado: 'COBRAR',
+        detalle: 'Tarjeta',
+        icono: '💳',
+        esPagado: false,
+        estadoBg: '#fef3c7',
+        estadoColor: '#92400e',
+        detalleBg: '#eff6ff',
+        detalleColor: '#1d4ed8'
+      };
+    case 'TP':
+      return {
+        estado: 'COBRAR',
+        detalle: 'Transferencia pendiente',
+        icono: '⏳',
+        esPagado: false,
+        estadoBg: '#fef3c7',
+        estadoColor: '#92400e',
+        detalleBg: '#fff7ed',
+        detalleColor: '#c2410c'
+      };
+    default:
+      return {
+        estado: 'COBRAR',
+        detalle: METODOS[metodo] || 'Revisar medio',
+        icono: '💰',
+        esPagado: false,
+        estadoBg: '#fef3c7',
+        estadoColor: '#92400e',
+        detalleBg: '#f3f4f6',
+        detalleColor: '#4b5563'
+      };
+  }
+}
 let lineasPedido = [];
 
 // === SISTEMA DE TIEMPO REAL ===
@@ -1124,23 +1278,40 @@ function activarTiempoRealCarga() {
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           if (payload.new?.marcado) {
             itemsMarcadosCache.add(checkboxId);
+            const compatKey = crearClaveCompatibilidadCarga(payload.new?.pedido_id, payload.new || {});
+            itemsMarcadosDetalleCache.set(compatKey, checkboxId);
           } else {
             itemsMarcadosCache.delete(checkboxId);
+            const compatKey = crearClaveCompatibilidadCarga(payload.new?.pedido_id, payload.new || {});
+            itemsMarcadosDetalleCache.delete(compatKey);
           }
         } else if (payload.eventType === 'DELETE') {
           itemsMarcadosCache.delete(checkboxId);
+          const compatKey = crearClaveCompatibilidadCarga(payload.old?.pedido_id, payload.old || {});
+          itemsMarcadosDetalleCache.delete(compatKey);
         }
         
         // Actualizar UI si el modal está abierto
         const modal = document.getElementById('modalCarga');
         if (modal && modal.style.display === 'flex') {
-          const checkbox = document.getElementById(checkboxId);
-          const itemCarga = checkbox?.closest('.item-carga');
+          const itemCarga = buscarItemCargaPorPersistencia(checkboxId);
+          const checkbox = itemCarga?.querySelector('.checkbox-carga');
           
           if (checkbox && itemCarga) {
-            const estaMarcado = itemsMarcadosCache.has(checkboxId);
+            const checkboxActualId = itemCarga.dataset.checkboxId;
+            const legacyCheckboxId = itemCarga.dataset.legacyCheckboxId;
+            const compatKey = itemCarga.dataset.compatKey;
+            const persistedCheckboxId = itemsMarcadosCache.has(checkboxActualId)
+              ? checkboxActualId
+              : (legacyCheckboxId && itemsMarcadosCache.has(legacyCheckboxId)
+                ? legacyCheckboxId
+                : (compatKey && itemsMarcadosDetalleCache.has(compatKey)
+                  ? itemsMarcadosDetalleCache.get(compatKey)
+                  : ''));
+            const estaMarcado = Boolean(persistedCheckboxId);
             checkbox.checked = estaMarcado;
             itemCarga.classList.toggle('checked', estaMarcado);
+            itemCarga.dataset.persistedCheckboxId = persistedCheckboxId;
             console.log(`✅ Checkbox ${checkboxId} actualizado en UI: ${estaMarcado}`);
           }
         }
@@ -1682,6 +1853,20 @@ async function anularPedido(docId, btnElement = null) {
       ErrorHandler.mostrarError('Error: No se pudo conectar');
       return;
     }
+
+    const { data: pedido, error: errorGet } = await client
+      .from('pedidos')
+      .select('*')
+      .eq('id', docId)
+      .single();
+
+    if (errorGet) {
+      throw new Error(errorGet.message);
+    }
+
+    await devolverStockItemsMarcados(docId, pedido);
+
+    const yaEstregado = pedido.entregado === true && pedido.estado !== 'ANULADO';
     
     // Actualizar pedido en Supabase
     const { error } = await client
@@ -1696,8 +1881,13 @@ async function anularPedido(docId, btnElement = null) {
       throw new Error(error.message);
     }
     
-    // Éxito
-    ErrorHandler.mostrarExito('🚫 Pedido marcado como ANULADO (no se contabiliza en caja)');
+    if (yaEstregado) {
+      await devolverStockPedido(docId, pedido);
+      ErrorHandler.mostrarExito('🚫 Pedido ANULADO y stock restaurado. El encargado ha sido notificado.');
+    } else {
+      ErrorHandler.mostrarExito('🚫 Pedido marcado como ANULADO (no se contabiliza en caja)');
+    }
+
     cargarPedidos();
     
   } catch (error) {
@@ -1858,7 +2048,7 @@ async function toggleEntregado(docId, estadoActual, btnElement = null) {
       // Verificar si el pedido ya está pagado antes de abrir modal
       const { data: pedido, error } = await client
         .from('pedidos')
-        .select('metodo_pago, nombre')
+        .select('metodo_pago, nombre, notas')
         .eq('id', docId)
         .single();
       
@@ -1868,8 +2058,8 @@ async function toggleEntregado(docId, estadoActual, btnElement = null) {
       
       const metodoPago = pedido.metodo_pago || 'E';
       
-      // OPCIÓN 1: Si ya está pagado (TG o P), confirmar una sola vez de forma simple
-      if (metodoPago === 'TG' || metodoPago === 'P') {
+      // OPCIÓN 1: Si ya está pagado, confirmar una sola vez de forma simple
+      if (['TG', 'P', 'PE', 'PC', 'PX', 'PMP'].includes(metodoPago)) {
         console.log('✅ Pedido ya pagado, solicitando confirmación simple');
         
         // Restaurar botón primero
@@ -1881,9 +2071,10 @@ async function toggleEntregado(docId, estadoActual, btnElement = null) {
         }
         
         // Confirmación simple
-        const metodoPagoNombre = metodoPago === 'TG' ? 'Transferencia Pagada' : 'Pagado';
+        const presentacionCobro = obtenerPresentacionCobroRepartidor({ metodo_pago: metodoPago, notas: pedido.notas || '' });
         const confirmacion = confirm(
-          `Este pedido ya está pagado por ${metodoPagoNombre}\n\n` +
+          `Este pedido ya figura como ${presentacionCobro.estado}\n` +
+          `Detalle: ${presentacionCobro.detalle}\n\n` +
           `Cliente: ${pedido.nombre || '(sin nombre)'}\n\n` +
           `¿Confirmas la entrega?`
         );
@@ -1904,7 +2095,7 @@ async function toggleEntregado(docId, estadoActual, btnElement = null) {
         }
         
         // Notificación de éxito
-        ErrorHandler.mostrarExito(`✅ Pedido entregado (${metodoPagoNombre})`);
+        ErrorHandler.mostrarExito(`✅ Pedido entregado (${presentacionCobro.detalle})`);
         cargarPedidos();
         return;
       }
@@ -2254,13 +2445,19 @@ function obtenerNombreMetodoPago(codigo) {
     'TP': '⏳ Transf. Pendiente',
     'TG': '✅ Transf. Pagada',
     'P': '💰 Pagado',
+    'PE': '💵 Pagado Local - Efectivo',
+    'PC': '💳 Pagado Local - Tarjeta',
+    'PX': '🔀 Pagado Local - Mixto',
+    'PM': '💰 Pago Mixto (Pendiente)',
+    'PMP': '✅ Pago Mixto (Pagado)',
     'efectivo': '💵 Efectivo',
     'tarjeta': '💳 Tarjeta',
     'transferencia': '🔄 Transferencia',
     'mixto': '💰 Pago Mixto',
     'MIXTO': '💰 Pago Mixto'
   };
-  return metodos[codigo] || 'Desconocido';
+  const codigoNormalizado = normalizarMetodoPago(codigo);
+  return metodos[codigoNormalizado] || metodos[codigo] || 'Desconocido';
 }
 
 // ========================================
@@ -2982,16 +3179,15 @@ function renderizarPedidosEntregados(pedidosEntregados) {
     const montoMatch = cobrarLabel.match(/\$[\d.,]+/);
     const montoTexto = montoMatch ? montoMatch[0] : '$0';
     
-    const metodoPago = d.metodo_pago || 'E';
-    const metodoPagoTexto = METODOS[metodoPago] || 'Sin método';
-    const iconoMetodo = metodoPago === 'E' ? '🟩' : metodoPago === 'DC' ? '💳' : metodoPago === 'TP' ? '⏳' : '✅';
+    const presentacionCobro = obtenerPresentacionCobroRepartidor(d);
     
     div.innerHTML = `
       <div class="card-content-horizontal" style="display:grid;grid-template-columns:1fr;gap:12px;">
         <div style="display:flex;flex-direction:column;gap:8px;">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <span style="font-size:24px;font-weight:700;color:#6b7280;">${montoTexto}</span>
-            <span style="font-size:14px;font-weight:600;color:#6b7280;background:#f3f4f6;padding:4px 12px;border-radius:6px;">(${iconoMetodo} ${metodoPagoTexto})</span>
+            <span style="font-size:13px;font-weight:800;color:${presentacionCobro.estadoColor};background:${presentacionCobro.estadoBg};padding:4px 10px;border-radius:999px;letter-spacing:0.02em;">${presentacionCobro.estado}</span>
+            <span style="font-size:13px;font-weight:600;color:${presentacionCobro.detalleColor};background:${presentacionCobro.detalleBg};padding:4px 10px;border-radius:999px;">${presentacionCobro.icono} ${presentacionCobro.detalle}</span>
           </div>
           
           <div style="font-size:15px;font-weight:600;color:#6b7280;">
@@ -3069,9 +3265,8 @@ function render(datosParaRenderizar){
     }
     
     // SEMÁFORO DE COBRO - Detectar si hay que cobrar
-    const metodoPago = d.metodo_pago || 'E';
-    const debeColectar = (metodoPago === 'E' || metodoPago === 'DC'); // Efectivo o Tarjeta
-    div.classList.add(debeColectar ? 'cobrar-pendiente' : 'cobrar-pagado');
+    const presentacionCobro = obtenerPresentacionCobroRepartidor(d);
+    div.classList.add(presentacionCobro.esPagado ? 'cobrar-pagado' : 'cobrar-pendiente');
     
     // Badge de NUEVO
     const esNuevo = esPedidoNuevo(d.created_at);
@@ -3082,12 +3277,6 @@ function render(datosParaRenderizar){
     const montoTexto = montoMatch ? montoMatch[0] : '$0';
     
     // Estado de pago para mostrar
-    const estadoPagoTexto = debeColectar ? 'POR COBRAR' : 'PAGADO';
-    
-    // Obtener texto del método de pago
-    const metodoPagoTexto = METODOS[metodoPago] || 'Sin método';
-    const iconoMetodo = metodoPago === 'E' ? '🟩' : metodoPago === 'DC' ? '💳' : metodoPago === 'TP' ? '⏳' : '✅';
-    
     div.innerHTML = `
       ${badgeNuevoHTML}
       <div class="card-content-horizontal" style="display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start;">
@@ -3097,7 +3286,8 @@ function render(datosParaRenderizar){
           <!-- Monto grande con método de pago -->
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <span style="font-size:32px;font-weight:700;color:#059669;">${montoTexto}</span>
-            <span style="font-size:16px;font-weight:600;color:#6b7280;background:#f3f4f6;padding:4px 12px;border-radius:6px;">(${iconoMetodo} ${metodoPagoTexto})</span>
+            <span style="font-size:13px;font-weight:800;color:${presentacionCobro.estadoColor};background:${presentacionCobro.estadoBg};padding:5px 10px;border-radius:999px;letter-spacing:0.02em;">${presentacionCobro.estado}</span>
+            <span style="font-size:13px;font-weight:600;color:${presentacionCobro.detalleColor};background:${presentacionCobro.detalleBg};padding:5px 10px;border-radius:999px;">${presentacionCobro.icono} ${presentacionCobro.detalle}</span>
           </div>
           
           <!-- Nombre cliente -->
@@ -3876,7 +4066,7 @@ document.addEventListener('DOMContentLoaded', function() {
 /**
  * MEJORA 6: LÓGICA DE RECAUDACIÓN REAL
  * Calcula el dinero que el repartidor debe cobrar en la calle
- * EXCLUYE pedidos con método "Pagado" (TG, P) del total recaudado
+ * EXCLUYE pedidos con método ya pagado (TG, P, PE, PC, PX) del total recaudado
  */
 function actualizarResumenCaja(datos = []) {
   let totalEfectivo = 0;
@@ -3891,7 +4081,7 @@ function actualizarResumenCaja(datos = []) {
   datos.forEach((pedido) => {
     // Solo contar pedidos entregados Y NO anulados
     if (pedido.entregado && pedido.estado !== 'ANULADO') {
-      const metodo = pedido.metodo_pago || pedido.metodo || 'E';
+      const metodo = normalizarMetodoPago(pedido.metodo_pago || pedido.metodo) || 'E';
       
       // Compatibilidad: intentar obtener el total de diferentes campos
       let total = 0;
@@ -3908,13 +4098,19 @@ function actualizarResumenCaja(datos = []) {
       if (total > 0) {
         // Detectar si es pago mixto buscando en las notas
         const notas = pedido.notas || '';
-        const esPagoMixto = notas.includes('🔄 PAGO MIXTO:') || notas.includes('PAGO MIXTO:');
+        const esPagoLocalMixto = metodo === 'PX' || notas.includes('PAGADO LOCAL MIXTO');
+        const esPagoMixto = !esPagoLocalMixto && (metodo === 'PM' || metodo === 'PMP' || notas.includes('PAGO MIXTO:'));
+
+        if (esPagoLocalMixto) {
+          totalPagados += total;
+          cantidadPagados++;
+        }
         
-        if (esPagoMixto) {
+        else if (esPagoMixto) {
           // Extraer montos de cada método del pago mixto
           const efectivoMatch = notas.match(/💵 Efectivo: \$?([\d,.]+)/);
           const tarjetaMatch = notas.match(/💳 Tarjeta: \$?([\d,.]+)/);
-          const transferenciaMatch = notas.match(/🔄 Transferencia: \$?([\d,.]+)/);
+          const transferenciaMatch = notas.match(/(?:🔄 Transferencia|✅ Transferencia PAGADA): \$?([\d,.]+)/);
           
           if (efectivoMatch) {
             const montoEfectivo = parseInt(efectivoMatch[1].replace(/[,\.]/g, '')) || 0;
@@ -3954,6 +4150,9 @@ function actualizarResumenCaja(datos = []) {
               break;
             case 'TG':    // Transferencia Pagada
             case 'P':     // Pagado (compatibilidad)
+            case 'PE':    // Pagado Local - Efectivo
+            case 'PC':    // Pagado Local - Tarjeta
+            case 'PX':    // Pagado Local - Mixto
               totalPagados += total; // Mostrar para cuadre, pero NO suma a Total Recaudado
               cantidadPagados++;
               break;
@@ -4025,21 +4224,28 @@ function actualizarResumenCaja(datos = []) {
 // Función para obtener el texto del precio según el método de pago
 function obtenerTextoVenta(pedido) {
   // Si es transferencia pagada o método pagado
-  if (pedido.metodo_pago === 'TG' || pedido.metodo_pago === 'P') {
+  const metodoPago = normalizarMetodoPago(pedido.metodo_pago);
+
+  if (metodoPago === 'TG' || metodoPago === 'P' || metodoPago === 'PE' || metodoPago === 'PC' || metodoPago === 'PX') {
     const total = parseInt(pedido.total) || 0;
     
-    if (pedido.metodo_pago === 'TG') {
+    if (metodoPago === 'TG') {
       // Transferencia pagada: mostrar "PAGADO Transferencia"
       if (total > 0) {
         return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO Transferencia $${total.toLocaleString('es-CL')}</span>`;
       }
       return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO Transferencia</span>`;
-    } else {
-      // Método 'P' (Pagado): mostrar solo "PAGADO" sin duplicar
+    } else if (metodoPago === 'PX') {
       if (total > 0) {
-        return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO $${total.toLocaleString('es-CL')}</span>`;
+        return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO 🔀 Mixto $${total.toLocaleString('es-CL')}</span>`;
       }
-      return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO</span>`;
+      return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO 🔀 Mixto</span>`;
+    } else {
+      const iconoMetodo = metodoPago === 'PC' ? '💳' : '💵';
+      if (total > 0) {
+        return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO ${iconoMetodo} $${total.toLocaleString('es-CL')}</span>`;
+      }
+      return `<span style="color: #10b981; font-weight: 800; background: #d1fae5; padding: 6px 12px; border-radius: 6px; border-left: 4px solid #10b981;">✅ PAGADO ${iconoMetodo}</span>`;
     }
   }
   
@@ -4052,7 +4258,7 @@ function obtenerTextoVenta(pedido) {
   
   if (total > 0) {
     // Obtener el método de pago para mostrar al repartidor
-    const metodo = pedido.metodo_pago;
+    const metodo = metodoPago || pedido.metodo_pago;
     const metodoTexto = METODOS[metodo] || metodo;
     
     // Agregar emoji según método de pago para fácil identificación
@@ -4069,6 +4275,15 @@ function obtenerTextoVenta(pedido) {
       case 'TP':
       case 'T': // Compatibilidad
         metodoConIcono = '⏳ Transf. Pendiente';
+        break;
+      case 'PE':
+        metodoConIcono = '💵 Pagado Local - Efectivo';
+        break;
+      case 'PC':
+        metodoConIcono = '💳 Pagado Local - Tarjeta';
+        break;
+      case 'PX':
+        metodoConIcono = '🔀 Pagado Local - Mixto';
         break;
       default:
         metodoConIcono = `💰 ${metodoTexto}`;
@@ -4139,7 +4354,8 @@ async function buscarHistorialPrevio(telefono) {
         ? pedido.items.map(item => `${item.cantidad}× ${item.nombre}`).join(', ')
         : 'Sin productos';
       const total = pedido.total ? `$${pedido.total.toLocaleString('es-CL')}` : '$0';
-      const metodoTexto = METODOS[pedido.metodo_pago] || pedido.metodo_pago || 'Efectivo';
+      const metodoCodigo = normalizarMetodoPago(pedido.metodo_pago);
+      const metodoTexto = METODOS[metodoCodigo] || pedido.metodo_pago || 'Efectivo';
       
       historialHTML += `
         <div class="historial-item">
@@ -4233,6 +4449,154 @@ function configurarBusquedaHistorial() {
 // MÓDULO DE RESUMEN DE CARGA (PICKING LIST)
 // ========================================
 
+function actualizarStockLocal(productoId, cantidadCambio) {
+  console.log(`🔄 Actualización local de stock omitida en repartidor (${productoId}: ${cantidadCambio})`);
+}
+
+async function descontarStockPedido(pedidoId, pedido) {
+  try {
+    const items = pedido.items || [];
+    const productosConId = items.filter(item => item.producto_id);
+
+    if (productosConId.length === 0) {
+      console.log('📦 Pedido sin productos del catálogo, no se descuenta stock');
+      return;
+    }
+
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible para descontar stock');
+      return;
+    }
+
+    console.log(`📦 Procesando ${productosConId.length} productos para descuento de stock...`);
+
+    for (const item of productosConId) {
+      try {
+        const { data: producto, error: errorGet } = await client
+          .from('productos')
+          .select('stock, nombre')
+          .eq('id', item.producto_id)
+          .single();
+
+        if (errorGet) {
+          console.error(`❌ Error obteniendo producto ${item.producto_id}:`, errorGet);
+          continue;
+        }
+
+        const stockAnterior = Math.floor(producto.stock || 0);
+        const nuevoStock = stockAnterior - item.cantidad;
+
+        const { error: errorUpdate } = await client
+          .from('productos')
+          .update({ stock: nuevoStock })
+          .eq('id', item.producto_id);
+
+        if (errorUpdate) {
+          console.error(`❌ Error actualizando stock de ${item.nombre}:`, errorUpdate);
+          continue;
+        }
+
+        const { error: errorMovimiento } = await client
+          .from('movimientos_stock')
+          .insert([{
+            producto_id: item.producto_id,
+            pedido_id: pedidoId,
+            tipo: 'SALIDA',
+            cantidad: item.cantidad,
+            stock_anterior: stockAnterior,
+            stock_nuevo: nuevoStock,
+            usuario: 'sistema_reparto',
+            motivo: `Pedido entregado - ${pedido.nombre || 'Cliente'}`
+          }]);
+
+        if (errorMovimiento) {
+          console.error('⚠️ Error registrando movimiento:', errorMovimiento);
+        }
+      } catch (error) {
+        console.error(`❌ Error procesando producto ${item.nombre}:`, error);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error en descontarStockPedido:', error);
+  }
+}
+
+async function devolverStockPedido(pedidoId, pedido) {
+  try {
+    const items = pedido.items || [];
+    const productosConId = items.filter(item => item.producto_id);
+
+    if (productosConId.length === 0) {
+      console.log('📦 Pedido sin productos del catálogo, no se devuelve stock');
+      return;
+    }
+
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible para devolver stock');
+      return;
+    }
+
+    console.log(`♻️ Devolviendo stock de ${productosConId.length} productos...`);
+
+    for (const item of productosConId) {
+      try {
+        const { data: producto, error: errorGet } = await client
+          .from('productos')
+          .select('stock, nombre')
+          .eq('id', item.producto_id)
+          .single();
+
+        if (errorGet) {
+          console.error(`Error obteniendo producto ${item.producto_id}:`, errorGet);
+          continue;
+        }
+
+        const stockAnterior = Math.floor(producto.stock || 0);
+        const nuevoStock = stockAnterior + item.cantidad;
+
+        const { error: errorUpdate } = await client
+          .from('productos')
+          .update({ stock: nuevoStock })
+          .eq('id', item.producto_id);
+
+        if (errorUpdate) {
+          console.error(`Error actualizando stock de ${item.nombre}:`, errorUpdate);
+          continue;
+        }
+
+        await client
+          .from('movimientos_stock')
+          .insert([{
+            producto_id: item.producto_id,
+            pedido_id: pedidoId,
+            tipo: 'DEVOLUCION',
+            cantidad: item.cantidad,
+            stock_anterior: stockAnterior,
+            stock_nuevo: nuevoStock,
+            usuario: 'sistema_reparto',
+            motivo: 'Pedido anulado - Devolución de stock'
+          }]);
+      } catch (error) {
+        console.error(`Error procesando producto ${item.nombre}:`, error);
+      }
+    }
+
+    await client
+      .from('alertas_sistema')
+      .insert([{
+        tipo: 'PEDIDO_ANULADO',
+        titulo: '⚠️ Pedido anulado - Stock restaurado',
+        mensaje: `El pedido #${pedidoId} fue anulado. Se restauraron ${productosConId.length} productos al inventario.`,
+        pedido_id: pedidoId,
+        leido: false
+      }]);
+  } catch (error) {
+    console.error('❌ Error en devolverStockPedido:', error);
+  }
+}
+
 /**
  * Extraer cantidades de productos del texto usando regex
  * Detecta patrones como: "2x Dog Chow", "3 Cat Chow", "1- Royal Canin"
@@ -4276,6 +4640,55 @@ function normalizarPedidoId(pedidoId) {
     .replace(/^_|_$/g, ''); // Limpiar inicio/final
 }
 
+function crearCheckboxIdLegacy(pedidoId, nombreProducto) {
+  return `chk_${normalizarPedidoId(pedidoId)}_${normalizarNombreProducto(nombreProducto)}`;
+}
+
+function crearCheckboxIdCarga(pedidoId, item, itemIndex = 0) {
+  const nombreProducto = item?.nombre || 'producto_sin_nombre';
+  const productoToken = item?.producto_id ? `prod_${item.producto_id}` : 'manual';
+  return `chk_${normalizarPedidoId(pedidoId)}_${productoToken}_${itemIndex}_${normalizarNombreProducto(nombreProducto)}`;
+}
+
+function buscarItemCargaPorPersistencia(checkboxId) {
+  if (!checkboxId) return null;
+
+  return document.querySelector(
+    `.item-carga[data-checkbox-id="${checkboxId}"], ` +
+    `.item-carga[data-legacy-checkbox-id="${checkboxId}"], ` +
+    `.item-carga[data-persisted-checkbox-id="${checkboxId}"]`
+  );
+}
+
+function crearClaveCompatibilidadCarga(pedidoId, item = {}) {
+  const pedidoToken = normalizarPedidoId(pedidoId);
+  const cantidad = parseInt(item.cantidad) || 0;
+
+  if (item.producto_id || item.productoId) {
+    return `ped_${pedidoToken}_prod_${item.producto_id || item.productoId}_cant_${cantidad}`;
+  }
+
+  return `ped_${pedidoToken}_nom_${normalizarNombreProducto(item.nombre || item.nombre_producto || '')}_cant_${cantidad}`;
+}
+
+function obtenerCheckboxPersistido(item, itemsMarcados) {
+  if (!item) return '';
+
+  if (itemsMarcados.has(item.checkboxId)) {
+    return item.checkboxId;
+  }
+
+  if (item.legacyCheckboxId && itemsMarcados.has(item.legacyCheckboxId)) {
+    return item.legacyCheckboxId;
+  }
+
+  if (item.compatKey && itemsMarcadosDetalleCache.has(item.compatKey)) {
+    return itemsMarcadosDetalleCache.get(item.compatKey) || '';
+  }
+
+  return '';
+}
+
 /**
  * Generar resumen de carga desde los pedidos visibles
  * AGRUPADO POR PRIORIDAD (Ruta A, B, C)
@@ -4305,9 +4718,10 @@ function generarResumenCarga() {
     const pedidoId = pedido.id;
     
     // Procesar items del pedido - CADA UNO GENERA UNA LÍNEA INDEPENDIENTE
-    for (const item of pedido.items) {
+    for (const [itemIndex, item] of pedido.items.entries()) {
       const nombreProducto = item.nombre || 'Producto sin nombre';
       const cantidad = parseInt(item.cantidad) || 1;
+      const productoId = item.producto_id || null;
       
       // CLAVE: NO agrupar, crear entrada independiente por pedido
       arraysPrioridad[prioridad].push({
@@ -4315,8 +4729,10 @@ function generarResumenCarga() {
         cantidad: cantidad,
         cliente: nombreCliente,
         pedidoId: pedidoId,
-        // ID único para checkbox: pedido + producto (con caracteres válidos para HTML)
-        checkboxId: `chk_${normalizarPedidoId(pedidoId)}_${normalizarNombreProducto(nombreProducto)}`
+        productoId: productoId,
+        checkboxId: crearCheckboxIdCarga(pedidoId, item, itemIndex),
+        legacyCheckboxId: crearCheckboxIdLegacy(pedidoId, nombreProducto),
+        compatKey: crearClaveCompatibilidadCarga(pedidoId, item)
       });
     }
   }
@@ -4425,7 +4841,10 @@ async function mostrarModalCarga() {
       for (const item of d.items) {
         // Usar el checkboxId único generado en generarResumenCarga
         const checkboxId = item.checkboxId || `check-${idx}`;
-        const estaMarcado = itemsMarcados.has(checkboxId);
+        const legacyCheckboxId = item.legacyCheckboxId || '';
+        const compatKey = item.compatKey || '';
+        const persistedCheckboxId = obtenerCheckboxPersistido(item, itemsMarcados);
+        const estaMarcado = Boolean(persistedCheckboxId);
         const checked = estaMarcado ? 'checked' : '';
         const checkedClass = estaMarcado ? ' checked' : '';
         
@@ -4437,7 +4856,15 @@ async function mostrarModalCarga() {
         const cantidadMostrar = esGranel ? `$${item.cantidad.toLocaleString('es-CL')}` : item.cantidad;
         
         items += `
-          <div class="item-carga${checkedClass}" data-checkbox-id="${checkboxId}">
+          <div class="item-carga${checkedClass}"
+            data-checkbox-id="${checkboxId}"
+            data-legacy-checkbox-id="${legacyCheckboxId}"
+            data-persisted-checkbox-id="${persistedCheckboxId}"
+               data-compat-key="${compatKey}"
+            data-producto-id="${item.productoId || ''}"
+            data-cantidad="${item.cantidad}"
+            data-nombre="${item.nombre}"
+            data-pedido-id="${item.pedidoId}">
             <input type="checkbox" class="checkbox-carga" id="${checkboxId}" ${checked} onchange="toggleItemCargaCheckbox(this)">
             <label for="${checkboxId}" class="item-texto">
               <div class="item-producto-nombre">${item.nombre}</div>
@@ -4467,11 +4894,12 @@ async function mostrarModalCarga() {
  * Guarda/elimina items marcados en Supabase usando ID único (pedido + producto)
  * @param {HTMLInputElement} checkbox - El checkbox que cambió
  */
-function toggleItemCargaCheckbox(checkbox) {
+async function toggleItemCargaCheckbox(checkbox) {
   const itemCarga = checkbox.closest('.item-carga');
   if (!itemCarga) return;
   
   const checkboxId = itemCarga.dataset.checkboxId;
+  const persistedCheckboxId = itemCarga.dataset.persistedCheckboxId || checkboxId;
   const checked = checkbox.checked;
   
   console.log(`🔄 Toggle checkbox: ${checkboxId} -> ${checked ? 'MARCADO' : 'DESMARCADO'}`);
@@ -4479,11 +4907,29 @@ function toggleItemCargaCheckbox(checkbox) {
   // Actualizar UI
   itemCarga.classList.toggle('checked', checked);
   
-  // Persistir en Supabase usando el ID único
-  if (checked) {
-    agregarItemMarcado(checkboxId);
-  } else {
-    eliminarItemMarcado(checkboxId);
+  checkbox.disabled = true;
+
+  try {
+    const itemInfo = {
+      productoId: itemCarga.dataset.productoId ? parseInt(itemCarga.dataset.productoId) : null,
+      cantidad: parseInt(itemCarga.dataset.cantidad) || 0,
+      nombre: itemCarga.dataset.nombre || '',
+      pedidoId: itemCarga.dataset.pedidoId || ''
+    };
+
+    if (checked) {
+      await agregarItemMarcado(checkboxId, itemInfo);
+      itemCarga.dataset.persistedCheckboxId = checkboxId;
+    } else {
+      await eliminarItemMarcado(persistedCheckboxId);
+      itemCarga.dataset.persistedCheckboxId = '';
+    }
+  } catch (error) {
+    console.error('❌ Error al persistir checkbox de carga:', error);
+    checkbox.checked = !checked;
+    itemCarga.classList.toggle('checked', !checked);
+  } finally {
+    checkbox.disabled = false;
   }
 }
 
@@ -4599,6 +5045,39 @@ document.addEventListener('DOMContentLoaded', function() {
 // ========================================
 // Cache en memoria para items marcados (sincronizado con Supabase)
 let itemsMarcadosCache = new Set();
+let itemsMarcadosDetalleCache = new Map();
+const CARGA_LOCAL_STATE_KEY = 'sabrofood_carga_estado';
+
+function cargarEstadoLocalCarga() {
+  try {
+    return JSON.parse(localStorage.getItem(CARGA_LOCAL_STATE_KEY) || '{}');
+  } catch (error) {
+    console.error('Error al cargar estado local de carga:', error);
+    return {};
+  }
+}
+
+function guardarEstadoLocalCarga(estado) {
+  try {
+    localStorage.setItem(CARGA_LOCAL_STATE_KEY, JSON.stringify(estado));
+  } catch (error) {
+    console.error('Error al guardar estado local de carga:', error);
+  }
+}
+
+function aplicarOverridesLocalesCarga(itemsMarcados) {
+  const estadoLocal = cargarEstadoLocalCarga();
+
+  Object.entries(estadoLocal).forEach(([checkboxId, marcado]) => {
+    if (marcado) {
+      itemsMarcados.add(checkboxId);
+    } else {
+      itemsMarcados.delete(checkboxId);
+    }
+  });
+
+  return itemsMarcados;
+}
 
 /**
  * Cargar items marcados desde Supabase (TODOS LOS USUARIOS VEN LO MISMO)
@@ -4607,25 +5086,32 @@ let itemsMarcadosCache = new Set();
 async function cargarItemsMarcados() {
   try {
     console.log('📥 Cargando items marcados desde Supabase...');
+    const cacheLocal = aplicarOverridesLocalesCarga(new Set());
     const client = getSupabaseClient();
     if (!client) {
       console.error('❌ Cliente Supabase no disponible para cargar items');
+      itemsMarcadosCache = cacheLocal;
       return itemsMarcadosCache;
     }
     
     const { data, error } = await client
       .from('carga_marcados')
-      .select('checkbox_id, marcado, updated_at')
+      .select('checkbox_id, marcado, updated_at, pedido_id, producto_id, cantidad, nombre_producto')
       .eq('marcado', true);
     
     if (error) {
       console.error('❌ Error al cargar items marcados:', error);
       console.error('Detalles del error:', JSON.stringify(error, null, 2));
-      alert(`Error al cargar items marcados: ${error.message}\n\n¿Existe la tabla carga_marcados en Supabase?\n¿Tienes permisos de lectura?`);
+      itemsMarcadosCache = cacheLocal;
       return itemsMarcadosCache;
     }
     
-    itemsMarcadosCache = new Set(data.map(item => item.checkbox_id));
+    itemsMarcadosCache = aplicarOverridesLocalesCarga(new Set(data.map(item => item.checkbox_id)));
+    itemsMarcadosDetalleCache = new Map();
+    data.forEach((item) => {
+      const compatKey = crearClaveCompatibilidadCarga(item.pedido_id, item);
+      itemsMarcadosDetalleCache.set(compatKey, item.checkbox_id);
+    });
     console.log(`✅ Cargados ${itemsMarcadosCache.size} items marcados:`, Array.from(itemsMarcadosCache));
     return itemsMarcadosCache;
   } catch (e) {
@@ -4638,39 +5124,268 @@ async function cargarItemsMarcados() {
  * Agregar un item a la lista de marcados en Supabase
  * @param {string} checkboxId - ID único del checkbox
  */
-async function agregarItemMarcado(checkboxId) {
+async function agregarItemMarcado(checkboxId, itemInfo = null) {
   try {
-    console.log(`✅ Guardando en Supabase: ${checkboxId}`);
     itemsMarcadosCache.add(checkboxId);
-    
+    const estadoLocal = cargarEstadoLocalCarga();
+    estadoLocal[checkboxId] = true;
+    guardarEstadoLocalCarga(estadoLocal);
+
     const client = getSupabaseClient();
     if (!client) {
       console.error('❌ Cliente Supabase no disponible');
       return;
     }
-    
-    const { data, error } = await client
+
+    const insertData = {
+      checkbox_id: checkboxId,
+      marcado: true,
+      updated_at: new Date().toISOString()
+    };
+
+    if (itemInfo) {
+      insertData.pedido_id = itemInfo.pedidoId;
+      insertData.producto_id = itemInfo.productoId;
+      insertData.cantidad = itemInfo.cantidad;
+      insertData.nombre_producto = itemInfo.nombre;
+      const compatKey = crearClaveCompatibilidadCarga(itemInfo.pedidoId, itemInfo);
+      itemsMarcadosDetalleCache.set(compatKey, checkboxId);
+    }
+
+    const { error } = await client
       .from('carga_marcados')
-      .upsert({ 
-        checkbox_id: checkboxId, 
-        marcado: true,
-        updated_at: new Date().toISOString()
-      }, { 
-        onConflict: 'checkbox_id' 
-      })
-      .select();
-    
+      .upsert(insertData, {
+        onConflict: 'checkbox_id'
+      });
+
     if (error) {
-      console.error('❌ Error al marcar item en Supabase:', error);
-      console.error('Detalles del error:', JSON.stringify(error, null, 2));
-      itemsMarcadosCache.delete(checkboxId);
-      alert(`Error al guardar: ${error.message}\n\nVerifica las políticas de la tabla carga_marcados en Supabase.`);
-    } else {
-      console.log('✅ Item guardado exitosamente:', data);
+      console.error('Error al marcar item:', error);
+      console.warn('⚠️ El item quedó guardado solo en este dispositivo');
+      return;
+    }
+
+    console.log('✅ Item guardado en carga_marcados exitosamente');
+
+    if (itemInfo && itemInfo.productoId) {
+      console.log('⏳ Intentando descontar stock...');
+      try {
+        await descontarStockItem(itemInfo);
+      } catch (stockError) {
+        console.warn('⚠️ No se pudo descontar stock, pero el item quedó marcado:', stockError);
+      }
+    } else if (itemInfo) {
+      console.warn('⚠️ Item sin producto_id - No se descuenta stock (producto manual o antiguo)');
     }
   } catch (e) {
-    console.error('❌ Excepción al marcar item:', e);
+    console.error('❌ Error CRÍTICO al guardar en carga_marcados:', e);
     itemsMarcadosCache.delete(checkboxId);
+    throw e;
+  }
+}
+
+async function descontarStockItem(itemInfo) {
+  try {
+    console.log(`🔄 Intentando descontar stock de "${itemInfo.nombre}" (${itemInfo.cantidad} unid.)...`);
+
+    if (!itemInfo.productoId || itemInfo.productoId <= 0) {
+      console.warn(`⚠️ producto_id inválido (${itemInfo.productoId}), omitiendo descuento de stock`);
+      return;
+    }
+
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible para descontar stock item');
+      return;
+    }
+
+    const { data: producto, error: errorGet } = await client
+      .from('productos')
+      .select('stock, nombre')
+      .eq('id', itemInfo.productoId)
+      .maybeSingle();
+
+    if (errorGet) {
+      console.error(`❌ Error al consultar producto ${itemInfo.productoId}:`, errorGet);
+      console.warn('⚠️ El checkbox se guardó pero no se pudo verificar el stock');
+      return;
+    }
+
+    if (!producto) {
+      console.warn(`⚠️ Producto ID ${itemInfo.productoId} no existe en la tabla "productos"`);
+      return;
+    }
+
+    const stockAnterior = Math.floor(producto.stock || 0);
+    const nuevoStock = stockAnterior - itemInfo.cantidad;
+
+    const { error: errorUpdate } = await client
+      .from('productos')
+      .update({ stock: nuevoStock })
+      .eq('id', itemInfo.productoId);
+
+    if (errorUpdate) {
+      console.error('❌ Error actualizando stock:', errorUpdate);
+      return;
+    }
+
+    const { error: errorMov } = await client
+      .from('movimientos_stock')
+      .insert([{
+        producto_id: itemInfo.productoId,
+        pedido_id: itemInfo.pedidoId,
+        tipo: 'SALIDA',
+        cantidad: itemInfo.cantidad,
+        stock_anterior: stockAnterior,
+        stock_nuevo: nuevoStock,
+        usuario: 'sistema_carga',
+        motivo: 'Bulto cargado para reparto'
+      }]);
+
+    if (errorMov) {
+      console.warn('⚠️ Stock descontado pero no se registró en historial:', errorMov);
+    }
+  } catch (error) {
+    console.error('❌ Excepción en descontarStockItem:', error);
+  }
+}
+
+async function devolverStockItem(checkboxId) {
+  try {
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible para devolver stock item');
+      return;
+    }
+
+    const { data, error } = await client
+      .from('carga_marcados')
+      .select('pedido_id, producto_id, cantidad, nombre_producto')
+      .eq('checkbox_id', checkboxId)
+      .single();
+
+    if (error || !data || !data.producto_id) {
+      console.log('⚠️ Item no tiene producto_id, no se devuelve stock');
+      return;
+    }
+
+    const { data: producto, error: errorGet } = await client
+      .from('productos')
+      .select('stock, nombre')
+      .eq('id', data.producto_id)
+      .single();
+
+    if (errorGet) {
+      console.error('❌ Error obteniendo producto:', errorGet);
+      return;
+    }
+
+    const stockAnterior = Math.floor(producto.stock || 0);
+    const nuevoStock = stockAnterior + data.cantidad;
+
+    const { error: errorUpdate } = await client
+      .from('productos')
+      .update({ stock: nuevoStock })
+      .eq('id', data.producto_id);
+
+    if (errorUpdate) {
+      console.error('❌ Error devolviendo stock:', errorUpdate);
+      return;
+    }
+
+    const { error: errorDelete } = await client
+      .from('movimientos_stock')
+      .delete()
+      .eq('producto_id', data.producto_id)
+      .eq('pedido_id', data.pedido_id)
+      .eq('tipo', 'SALIDA')
+      .eq('cantidad', data.cantidad);
+
+    if (errorDelete) {
+      console.warn('⚠️ No se pudo eliminar movimiento (no crítico):', errorDelete);
+    }
+  } catch (e) {
+    console.error('❌ Error en devolverStockItem:', e);
+  }
+}
+
+async function devolverStockItemsMarcados(pedidoId, pedido = null) {
+  try {
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible para devolver items marcados');
+      return;
+    }
+
+    const { data: itemsMarcados, error } = await client
+      .from('carga_marcados')
+      .select('checkbox_id, producto_id, cantidad, nombre_producto')
+      .eq('pedido_id', pedidoId);
+
+    if (error) {
+      console.error('❌ Error consultando items marcados:', error);
+      return;
+    }
+
+    if (!itemsMarcados || itemsMarcados.length === 0) {
+      console.log('ℹ️ El pedido no tiene items marcados en carga - no hay stock para devolver');
+      return;
+    }
+
+    let itemsDevueltos = 0;
+    for (const item of itemsMarcados) {
+      if (!item.producto_id) {
+        continue;
+      }
+
+      try {
+        const { data: producto, error: errorGet } = await client
+          .from('productos')
+          .select('stock, nombre')
+          .eq('id', item.producto_id)
+          .single();
+
+        if (errorGet) {
+          continue;
+        }
+
+        const stockAnterior = Math.floor(producto.stock || 0);
+        const nuevoStock = stockAnterior + item.cantidad;
+
+        const { error: errorUpdate } = await client
+          .from('productos')
+          .update({ stock: nuevoStock })
+          .eq('id', item.producto_id);
+
+        if (errorUpdate) {
+          continue;
+        }
+
+        await client
+          .from('movimientos_stock')
+          .delete()
+          .eq('producto_id', item.producto_id)
+          .eq('pedido_id', pedidoId)
+          .eq('tipo', 'SALIDA')
+          .eq('cantidad', item.cantidad);
+
+        itemsDevueltos++;
+      } catch (itemError) {
+        console.error('❌ Error procesando item:', itemError);
+      }
+    }
+
+    const { error: errorDelete } = await client
+      .from('carga_marcados')
+      .delete()
+      .eq('pedido_id', pedidoId);
+
+    if (errorDelete) {
+      console.error('❌ Error eliminando items de carga_marcados:', errorDelete);
+    }
+
+    console.log(`✅ Stock devuelto exitosamente: ${itemsDevueltos} items procesados`);
+  } catch (error) {
+    console.error('❌ Error en devolverStockItemsMarcados:', error);
   }
 }
 
@@ -4680,8 +5395,16 @@ async function agregarItemMarcado(checkboxId) {
  */
 async function eliminarItemMarcado(checkboxId) {
   try {
-    console.log(`❌ Eliminando de Supabase: ${checkboxId}`);
+    try {
+      await devolverStockItem(checkboxId);
+    } catch (stockError) {
+      console.warn('⚠️ Error devolviendo stock, pero continuando con desmarcado:', stockError);
+    }
+
     itemsMarcadosCache.delete(checkboxId);
+    const estadoLocal = cargarEstadoLocalCarga();
+    estadoLocal[checkboxId] = false;
+    guardarEstadoLocalCarga(estadoLocal);
     
     const client = getSupabaseClient();
     if (!client) {
@@ -4689,23 +5412,22 @@ async function eliminarItemMarcado(checkboxId) {
       return;
     }
     
-    const { data, error } = await client
+    const { error } = await client
       .from('carga_marcados')
       .delete()
-      .eq('checkbox_id', checkboxId)
-      .select();
+      .eq('checkbox_id', checkboxId);
     
     if (error) {
-      console.error('❌ Error al desmarcar item en Supabase:', error);
-      console.error('Detalles del error:', JSON.stringify(error, null, 2));
-      itemsMarcadosCache.add(checkboxId);
-      alert(`Error al eliminar: ${error.message}\n\nVerifica las políticas de la tabla carga_marcados en Supabase.`);
-    } else {
-      console.log('✅ Item eliminado exitosamente:', data);
+      console.error('❌ Error al eliminar de carga_marcados:', error);
+      console.warn('⚠️ El desmarcado quedó aplicado solo en este dispositivo');
+      return;
     }
+
+    console.log('✅ Item desmarcado exitosamente');
   } catch (e) {
-    console.error('❌ Excepción al desmarcar item:', e);
+    console.error('❌ Error CRÍTICO al desmarcar item:', e);
     itemsMarcadosCache.add(checkboxId);
+    throw e;
   }
 }
 
@@ -4714,13 +5436,16 @@ async function eliminarItemMarcado(checkboxId) {
  */
 async function limpiarItemsMarcados() {
   try {
+    itemsMarcadosCache.clear();
+    itemsMarcadosDetalleCache.clear();
+    guardarEstadoLocalCarga({});
+
     const client = getSupabaseClient();
     if (!client) {
       console.error('❌ Cliente no disponible');
       return;
     }
-    
-    itemsMarcadosCache.clear();
+
     const { error } = await client
       .from('carga_marcados')
       .delete()

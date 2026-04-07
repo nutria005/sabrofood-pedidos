@@ -539,14 +539,36 @@
           
           <div class="form-row" style="margin-bottom:8px;">
             <label for="metodoPago" class="sr-only">Método de pago</label>
-            <select id="metodoPago" style="font-size:1.05rem;" aria-label="Seleccionar método de pago">
+            <select id="metodoPago" style="font-size:1.05rem;" aria-label="Seleccionar método de pago" onchange="togglePanelPagoLocal()">
               <option value="" disabled selected>-- Seleccionar Pago --</option>
               <option value="E">💵 Efectivo</option>
               <option value="DC">💳 Débito/Crédito</option>
               <option value="TP">⏳ Transf. Pendiente</option>
               <option value="TG">✅ Transf. Pagada</option>
-              <option value="P">💰 Pagado</option>
+              <option value="PE">💵 Pagado Local - Efectivo</option>
+              <option value="PC">💳 Pagado Local - Tarjeta</option>
+              <option value="PX">🔀 Pagado Local - Mixto</option>
             </select>
+          </div>
+
+          <!-- Sub-panel solo visible para PX (Pagado Local Mixto) -->
+          <div id="panelPagoLocalMixto" style="display:none; margin-top:10px; padding:12px; background:#f0fdf4; border-radius:8px; border:1px solid #bbf7d0;">
+            <p style="margin:0 0 8px 0; font-weight:600; color:#166534; font-size:0.95rem;">🔀 ¿Cuánto pagó de cada forma?</p>
+            <div style="display:flex; gap:12px; flex-wrap:wrap;">
+              <div style="flex:1; min-width:120px;">
+                <label style="font-size:0.85rem; color:#374151;">💵 Efectivo: $</label>
+                <input type="number" id="pxEfectivo" min="0" value="0" step="1000"
+                  style="width:100%; padding:6px; border:1px solid #d1fae5; border-radius:6px; font-size:1rem;"
+                  oninput="actualizarTotalPX()">
+              </div>
+              <div style="flex:1; min-width:120px;">
+                <label style="font-size:0.85rem; color:#374151;">💳 Tarjeta: $</label>
+                <input type="number" id="pxTarjeta" min="0" value="0" step="1000"
+                  style="width:100%; padding:6px; border:1px solid #d1fae5; border-radius:6px; font-size:1rem;"
+                  oninput="actualizarTotalPX()">
+              </div>
+            </div>
+            <p id="pxValidacion" style="margin:6px 0 0 0; font-size:0.85rem; color:#6b7280;"></p>
           </div>
         </fieldset>
         
