@@ -6405,35 +6405,12 @@ let itemsMarcadosCache = new Set();
 let itemsMarcadosDetalleCache = new Map();
 const CARGA_LOCAL_STATE_KEY = 'sabrofood_carga_estado';
 
-function cargarEstadoLocalCarga() {
+function limpiarEstadoLocalCargaLegacy() {
   try {
-    return JSON.parse(localStorage.getItem(CARGA_LOCAL_STATE_KEY) || '{}');
+    localStorage.removeItem(CARGA_LOCAL_STATE_KEY);
   } catch (error) {
-    console.error('Error al cargar estado local de carga:', error);
-    return {};
+    console.error('Error al limpiar estado local legado de carga:', error);
   }
-}
-
-function guardarEstadoLocalCarga(estado) {
-  try {
-    localStorage.setItem(CARGA_LOCAL_STATE_KEY, JSON.stringify(estado));
-  } catch (error) {
-    console.error('Error al guardar estado local de carga:', error);
-  }
-}
-
-function aplicarOverridesLocalesCarga(itemsMarcados) {
-  const estadoLocal = cargarEstadoLocalCarga();
-
-  Object.entries(estadoLocal).forEach(([checkboxId, marcado]) => {
-    if (marcado) {
-      itemsMarcados.add(checkboxId);
-    } else {
-      itemsMarcados.delete(checkboxId);
-    }
-  });
-
-  return itemsMarcados;
 }
 
 /**
@@ -6442,7 +6419,7 @@ function aplicarOverridesLocalesCarga(itemsMarcados) {
  */
 async function cargarItemsMarcados() {
   try {
-    const cacheLocal = aplicarOverridesLocalesCarga(new Set());
+    limpiarEstadoLocalCargaLegacy();
     const { data, error } = await supabase_client
       .from('carga_marcados')
       .select('checkbox_id, pedido_id, producto_id, cantidad, nombre_producto')
@@ -6450,11 +6427,10 @@ async function cargarItemsMarcados() {
     
     if (error) {
       console.error('Error al cargar items marcados:', error);
-      itemsMarcadosCache = cacheLocal;
       return itemsMarcadosCache;
     }
     
-    itemsMarcadosCache = aplicarOverridesLocalesCarga(new Set(data.map(item => item.checkbox_id)));
+    itemsMarcadosCache = new Set(data.map(item => item.checkbox_id));
     itemsMarcadosDetalleCache = new Map();
     data.forEach((item) => {
       const compatKey = crearClaveCompatibilidadCarga(item.pedido_id, item);
@@ -6474,10 +6450,34 @@ async function cargarItemsMarcados() {
  */
 async function agregarItemMarcado(checkboxId, itemInfo = null) {
   try {
+    limpiarEstadoLocalCargaLegacy();
+
+    const { data: existente, error: errorExistente } = await supabase_client
+      .from('carga_marcados')
+      .select('checkbox_id, marcado')
+      .eq('checkbox_id', checkboxId)
+      .maybeSingle();
+
+    if (errorExistente) {
+      console.error('Error al verificar item marcado existente:', errorExistente);
+      throw errorExistente;
+    }
+
+    if (existente?.marcado) {
+      itemsMarcadosCache.add(checkboxId);
+      if (itemInfo) {
+        const compatKey = crearClaveCompatibilidadCarga(itemInfo.pedidoId, {
+          producto_id: itemInfo.productoId,
+          cantidad: itemInfo.cantidad,
+          nombre_producto: itemInfo.nombre
+        });
+        itemsMarcadosDetalleCache.set(compatKey, checkboxId);
+      }
+      console.log('ℹ️ Item ya estaba marcado en Supabase, no se vuelve a descontar stock');
+      return;
+    }
+
     itemsMarcadosCache.add(checkboxId);
-    const estadoLocal = cargarEstadoLocalCarga();
-    estadoLocal[checkboxId] = true;
-    guardarEstadoLocalCarga(estadoLocal);
     
     const insertData = { 
       checkbox_id: checkboxId, 
@@ -6501,11 +6501,20 @@ async function agregarItemMarcado(checkboxId, itemInfo = null) {
     
     if (error) {
       console.error('Error al marcar item:', error);
-      console.warn('⚠️ El item quedó guardado solo en este dispositivo');
-      return;
+      itemsMarcadosCache.delete(checkboxId);
+      throw error;
     }
     
     console.log('✅ Item guardado en carga_marcados exitosamente');
+
+    if (itemInfo) {
+      const compatKey = crearClaveCompatibilidadCarga(itemInfo.pedidoId, {
+        producto_id: itemInfo.productoId,
+        cantidad: itemInfo.cantidad,
+        nombre_producto: itemInfo.nombre
+      });
+      itemsMarcadosDetalleCache.set(compatKey, checkboxId);
+    }
     
     // ⚡ DESCUENTO DE STOCK: Si hay producto_id, descontar stock (error no es crítico)
     if (itemInfo && itemInfo.productoId) {
@@ -6615,16 +6624,25 @@ async function descontarStockItem(itemInfo) {
  * Devolver stock cuando se desmarca un item de carga
  * @param {string} checkboxId - ID del checkbox
  */
-async function devolverStockItem(checkboxId) {
+async function devolverStockItem(itemOrigen) {
   try {
-    // Obtener info del item desde carga_marcados
-    const { data, error } = await supabase_client
-      .from('carga_marcados')
-      .select('pedido_id, producto_id, cantidad, nombre_producto')
-      .eq('checkbox_id', checkboxId)
-      .single();
-    
-    if (error || !data || !data.producto_id) {
+    const data = typeof itemOrigen === 'string'
+      ? await (async () => {
+          const { data: itemData, error } = await supabase_client
+            .from('carga_marcados')
+            .select('pedido_id, producto_id, cantidad, nombre_producto')
+            .eq('checkbox_id', itemOrigen)
+            .single();
+
+          if (error) {
+            throw error;
+          }
+
+          return itemData;
+        })()
+      : itemOrigen;
+
+    if (!data || !data.producto_id) {
       console.log('⚠️ Item no tiene producto_id, no se devuelve stock');
       return;
     }
@@ -6787,29 +6805,64 @@ async function devolverStockItemsMarcados(pedidoId, pedido = null) {
  */
 async function eliminarItemMarcado(checkboxId) {
   try {
+    limpiarEstadoLocalCargaLegacy();
+
+    const { data: existente, error: errorExistente } = await supabase_client
+      .from('carga_marcados')
+      .select('checkbox_id, pedido_id, producto_id, cantidad, nombre_producto')
+      .eq('checkbox_id', checkboxId)
+      .maybeSingle();
+
+    if (errorExistente) {
+      console.error('❌ Error consultando item a desmarcar:', errorExistente);
+      throw errorExistente;
+    }
+
+    if (!existente) {
+      itemsMarcadosCache.delete(checkboxId);
+      console.log('ℹ️ El item ya no existía en carga_marcados');
+      return;
+    }
+
+    const { data: itemDesmarcado, error: errorUpdate } = await supabase_client
+      .from('carga_marcados')
+      .update({
+        marcado: false,
+        updated_at: new Date().toISOString()
+      })
+      .eq('checkbox_id', checkboxId)
+      .eq('marcado', true)
+      .select('checkbox_id, pedido_id, producto_id, cantidad, nombre_producto')
+      .maybeSingle();
+
+    if (errorUpdate) {
+      console.error('❌ Error al actualizar estado de carga_marcados:', errorUpdate);
+      throw errorUpdate;
+    }
+
+    if (!itemDesmarcado) {
+      itemsMarcadosCache.delete(checkboxId);
+      if (existente?.pedido_id) {
+        const compatKey = crearClaveCompatibilidadCarga(existente.pedido_id, existente);
+        itemsMarcadosDetalleCache.delete(compatKey);
+      }
+      console.log('ℹ️ El item ya había sido desmarcado en otra pestaña o dispositivo');
+      return;
+    }
+
     // Intentar devolver el stock (no es crítico si falla)
     try {
-      await devolverStockItem(checkboxId);
+      await devolverStockItem(itemDesmarcado);
     } catch (stockError) {
       console.warn('⚠️ Error devolviendo stock, pero continuando con desmarcado:', stockError);
     }
     
     itemsMarcadosCache.delete(checkboxId);
-    const estadoLocal = cargarEstadoLocalCarga();
-    estadoLocal[checkboxId] = false;
-    guardarEstadoLocalCarga(estadoLocal);
-    
-    const { error } = await supabase_client
-      .from('carga_marcados')
-      .delete()
-      .eq('checkbox_id', checkboxId);
-    
-    if (error) {
-      console.error('❌ Error al eliminar de carga_marcados:', error);
-      console.warn('⚠️ El desmarcado quedó aplicado solo en este dispositivo');
-      return;
+    if (itemDesmarcado?.pedido_id) {
+      const compatKey = crearClaveCompatibilidadCarga(itemDesmarcado.pedido_id, itemDesmarcado);
+      itemsMarcadosDetalleCache.delete(compatKey);
     }
-    
+
     console.log('✅ Item desmarcado exitosamente');
     
   } catch (e) {
@@ -6826,7 +6879,7 @@ async function limpiarItemsMarcados() {
   try {
     itemsMarcadosCache.clear();
     itemsMarcadosDetalleCache.clear();
-    guardarEstadoLocalCarga({});
+    limpiarEstadoLocalCargaLegacy();
     const { error } = await supabase_client
       .from('carga_marcados')
       .delete()
@@ -6992,6 +7045,163 @@ function repetirPedido(pedidoOriginal) {
 let todosLosPedidos = [];
 let pedidosFiltrados = [];
 let modoVIP = false;
+let historialFiltroTimeout = null;
+const HISTORIAL_PAGE_SIZE = 1000;
+
+function escaparHtmlHistorial(valor) {
+  return String(valor ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function normalizarTextoHistorial(valor) {
+  return String(valor ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function obtenerGrupoMetodoHistorial(pedido) {
+  const metodo = String(pedido?.metodo_pago || pedido?.metodo || 'E').trim().toUpperCase();
+  const notas = String(pedido?.notas || '');
+
+  if (metodo === 'PM' || metodo === 'PMP' || notas.includes('PAGO MIXTO:')) {
+    return 'mixto';
+  }
+
+  if (metodo === 'E' || metodo.includes('EFECTIVO')) return 'efectivo';
+  if (['DC', 'D', 'C'].includes(metodo) || metodo.includes('TARJETA')) return 'tarjeta';
+  if (['TP', 'T'].includes(metodo)) return 'transferencia_pendiente';
+  if (metodo === 'TG') return 'transferencia_pagada';
+  if (['PE', 'PC', 'PX', 'P'].includes(metodo)) return 'pagado_local';
+
+  return 'otros';
+}
+
+function obtenerEstadoHistorial(pedido) {
+  if (pedido?.estado === 'ANULADO') return 'anulados';
+  if (pedido?.entregado) return 'entregados';
+  return 'pendientes';
+}
+
+function actualizarResumenHistorialResultados() {
+  const textoEl = document.getElementById('historialResultadosTexto');
+  const periodoEl = document.getElementById('historialPeriodoTexto');
+  const fechaDesde = document.getElementById('fechaDesde')?.value;
+  const fechaHasta = document.getElementById('fechaHasta')?.value;
+
+  if (textoEl) {
+    textoEl.textContent = `Mostrando ${pedidosFiltrados.length.toLocaleString('es-CL')} pedido(s) de ${todosLosPedidos.length.toLocaleString('es-CL')} cargado(s)`;
+  }
+
+  if (periodoEl) {
+    if (fechaDesde || fechaHasta) {
+      const desdeTexto = fechaDesde || 'inicio';
+      const hastaTexto = fechaHasta || 'hoy';
+      periodoEl.textContent = `Período: ${desdeTexto} a ${hastaTexto}`;
+    } else {
+      periodoEl.textContent = 'Período: Todo el historial';
+    }
+  }
+}
+
+function mostrarCargandoHistorial(mensaje = 'Cargando historial...') {
+  const contenedor = document.getElementById('modalHistorialCompletoBody');
+  if (contenedor) {
+    contenedor.innerHTML = `
+      <div style="text-align:center;padding:48px 20px;color:#64748b;">
+        <div style="font-size:2rem;margin-bottom:12px;">⏳</div>
+        <div style="font-size:1rem;font-weight:700;margin-bottom:6px;">${escaparHtmlHistorial(mensaje)}</div>
+        <div style="font-size:0.9rem;">Cargando pedidos en bloques para mostrar todo el historial.</div>
+      </div>
+    `;
+  }
+}
+
+async function obtenerTodosLosPedidosHistorial(fechaDesde, fechaHasta) {
+  let desde = 0;
+  let pedidos = [];
+
+  while (true) {
+    let query = supabase_client
+      .from('pedidos')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(desde, desde + HISTORIAL_PAGE_SIZE - 1);
+
+    if (fechaDesde) {
+      query = query.gte('created_at', `${fechaDesde}T00:00:00`);
+    }
+
+    if (fechaHasta) {
+      query = query.lte('created_at', `${fechaHasta}T23:59:59`);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const bloque = data || [];
+    pedidos = pedidos.concat(bloque);
+
+    if (bloque.length < HISTORIAL_PAGE_SIZE) {
+      break;
+    }
+
+    desde += HISTORIAL_PAGE_SIZE;
+  }
+
+  return pedidos;
+}
+
+function exportarHistorialCompletoCSV() {
+  if (!pedidosFiltrados.length) {
+    ErrorHandler.mostrarWarning('No hay pedidos filtrados para exportar');
+    return;
+  }
+
+  const encabezados = [
+    'Fecha', 'Cliente', 'Telefono', 'Total', 'Metodo', 'Estado', 'Direccion', 'Productos', 'Notas'
+  ];
+
+  const filas = pedidosFiltrados.map((pedido) => {
+    const fecha = pedido.created_at
+      ? new Date(pedido.created_at).toLocaleString('es-CL')
+      : '';
+    const productos = Array.isArray(pedido.items)
+      ? pedido.items.map((item) => `${item.cantidad || 1}x ${item.nombre || ''}`).join(' | ')
+      : '';
+
+    return [
+      fecha,
+      pedido.nombre || '',
+      pedido.telefono || '',
+      pedido.total || 0,
+      pedido.metodo_pago || pedido.metodo || '',
+      pedido.estado === 'ANULADO' ? 'ANULADO' : (pedido.entregado ? 'ENTREGADO' : 'PENDIENTE'),
+      pedido.direccion || '',
+      productos,
+      pedido.notas || ''
+    ];
+  });
+
+  const csv = [encabezados, ...filas]
+    .map((fila) => fila.map((valor) => `"${String(valor ?? '').replace(/"/g, '""')}"`).join(';'))
+    .join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = `historial_reparto_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(enlace);
+  enlace.click();
+  document.body.removeChild(enlace);
+  URL.revokeObjectURL(url);
+}
 
 /**
  * Abrir modal de historial completo
@@ -6999,14 +7209,18 @@ let modoVIP = false;
 async function abrirHistorialCompleto() {
   const modal = document.getElementById('modalHistorialCompleto');
   modal.style.display = 'flex';
-  
-  // Establecer fechas por defecto (últimos 30 días)
-  const hoy = new Date();
-  const hace30Dias = new Date();
-  hace30Dias.setDate(hoy.getDate() - 30);
-  
-  document.getElementById('fechaHasta').value = hoy.toISOString().split('T')[0];
-  document.getElementById('fechaDesde').value = hace30Dias.toISOString().split('T')[0];
+
+  document.getElementById('buscarHistorial').value = '';
+  document.getElementById('fechaHasta').value = '';
+  document.getElementById('fechaDesde').value = '';
+  document.getElementById('filtroMetodoHistorial').value = 'todos';
+  document.getElementById('filtroEstadoHistorial').value = 'todos';
+  modoVIP = false;
+  const btn = document.getElementById('btnToggleVIP');
+  if (btn) {
+    btn.textContent = '💎 Ranking VIP';
+    btn.style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+  }
   
   // Cargar datos
   await cargarHistorialCompleto();
@@ -7021,6 +7235,10 @@ function cerrarHistorialCompleto() {
   
   // Resetear filtros
   document.getElementById('buscarHistorial').value = '';
+  document.getElementById('fechaHasta').value = '';
+  document.getElementById('fechaDesde').value = '';
+  document.getElementById('filtroMetodoHistorial').value = 'todos';
+  document.getElementById('filtroEstadoHistorial').value = 'todos';
   modoVIP = false;
 }
 
@@ -7031,44 +7249,10 @@ async function cargarHistorialCompleto() {
   try {
     const fechaDesde = document.getElementById('fechaDesde').value;
     const fechaHasta = document.getElementById('fechaHasta').value;
-    
-    let query = supabase_client
-      .from('pedidos')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    // Aplicar filtros de fecha si existen
-    if (fechaDesde) {
-      query = query.gte('created_at', fechaDesde + 'T00:00:00');
-    }
-    
-    if (fechaHasta) {
-      query = query.lte('created_at', fechaHasta + 'T23:59:59');
-    }
-    
-    const { data, error } = await query;
-    
-    if (error) {
-      console.error('Error al cargar historial:', error);
-      ErrorHandler.mostrarError('Error al cargar el historial completo');
-      return;
-    }
-    
-    todosLosPedidos = data || [];
-    pedidosFiltrados = [...todosLosPedidos];
-    
-    // Actualizar estadísticas
-    actualizarEstadisticas();
-    
-    // Mostrar productos top
-    mostrarTopProductos();
-    
-    // Renderizar según modo actual
-    if (modoVIP) {
-      renderizarRankingVIP();
-    } else {
-      renderizarHistorialCronologico();
-    }
+    mostrarCargandoHistorial(fechaDesde || fechaHasta ? 'Cargando historial filtrado por fechas...' : 'Cargando todo el historial...');
+
+    todosLosPedidos = await obtenerTodosLosPedidosHistorial(fechaDesde, fechaHasta);
+    aplicarFiltrosHistorial();
     
   } catch (error) {
     console.error('Error inesperado:', error);
@@ -7081,7 +7265,7 @@ async function cargarHistorialCompleto() {
  */
 function actualizarEstadisticas() {
   const totalPedidos = pedidosFiltrados.length;
-  const totalRecaudado = pedidosFiltrados.reduce((sum, p) => sum + (p.total || 0), 0);
+  const totalRecaudado = pedidosFiltrados.reduce((sum, p) => sum + (Number(p.total) || 0), 0);
   
   // Contar clientes únicos por teléfono
   const telefonosUnicos = new Set(pedidosFiltrados.map(p => p.telefono).filter(t => t));
@@ -7096,7 +7280,7 @@ function actualizarEstadisticas() {
 }
 
 /**
- * Analizar y mostrar top 3 productos más vendidos
+ * Analizar y mostrar top 5 productos más vendidos
  */
 function mostrarTopProductos() {
   const conteoProductos = {};
@@ -7105,15 +7289,16 @@ function mostrarTopProductos() {
   pedidosFiltrados.forEach(pedido => {
     if (pedido.items && Array.isArray(pedido.items)) {
       pedido.items.forEach(item => {
-        const nombreProducto = item.nombre.toLowerCase().trim();
-        const esGranel = item.nombre && (
-          item.nombre.toLowerCase().includes('(granel)') || 
-          item.nombre.toLowerCase().includes('granel')
+        const nombreVisible = item.nombre || item.nombre_producto || item.producto || 'Producto sin nombre';
+        const nombreProducto = nombreVisible.toLowerCase().trim();
+        const esGranel = nombreVisible && (
+          nombreVisible.toLowerCase().includes('(granel)') || 
+          nombreVisible.toLowerCase().includes('granel')
         );
         
         if (!conteoProductos[nombreProducto]) {
           conteoProductos[nombreProducto] = {
-            nombre: item.nombre,
+            nombre: nombreVisible,
             cantidad: 0,
             ventas: 0,
             esGranel: esGranel
@@ -7136,9 +7321,9 @@ function mostrarTopProductos() {
   // Ordenar por ventas totales (más representativo para productos a granel)
   const productosOrdenados = Object.values(conteoProductos)
     .sort((a, b) => b.ventas - a.ventas)
-    .slice(0, 3);
+    .slice(0, 5);
   
-  // Renderizar top 3
+  // Renderizar top 5
   const contenedor = document.getElementById('listaTopProductos');
   
   if (productosOrdenados.length === 0) {
@@ -7188,21 +7373,23 @@ function renderizarHistorialCronologico() {
   }
   
   const html = `
-    <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+    <table style="width:100%;border-collapse:collapse;font-size:0.9rem;table-layout:fixed;">
       <thead style="background:#f3f4f6;position:sticky;top:0;z-index:10;">
         <tr>
-          <th style="padding:12px;text-align:left;border-bottom:2px solid #d1d5db;font-weight:700;">📅 Fecha</th>
+          <th style="padding:12px;text-align:left;border-bottom:2px solid #d1d5db;font-weight:700;width:140px;">📅 Fecha</th>
           <th style="padding:12px;text-align:left;border-bottom:2px solid #d1d5db;font-weight:700;">👤 Cliente</th>
-          <th style="padding:12px;text-align:left;border-bottom:2px solid #d1d5db;font-weight:700;">📞 Teléfono</th>
+          <th style="padding:12px;text-align:left;border-bottom:2px solid #d1d5db;font-weight:700;width:120px;">📞 Teléfono</th>
           <th style="padding:12px;text-align:left;border-bottom:2px solid #d1d5db;font-weight:700;">🛒 Productos</th>
-          <th style="padding:12px;text-align:right;border-bottom:2px solid #d1d5db;font-weight:700;">💰 Total</th>
-          <th style="padding:12px;text-align:center;border-bottom:2px solid #d1d5db;font-weight:700;">💳 Pago</th>
-          <th style="padding:12px;text-align:center;border-bottom:2px solid #d1d5db;font-weight:700;">📦 Estado</th>
+          <th style="padding:12px;text-align:right;border-bottom:2px solid #d1d5db;font-weight:700;width:110px;">💰 Total</th>
+          <th style="padding:12px;text-align:center;border-bottom:2px solid #d1d5db;font-weight:700;width:170px;">💳 Pago</th>
+          <th style="padding:12px;text-align:center;border-bottom:2px solid #d1d5db;font-weight:700;width:120px;">📦 Estado</th>
         </tr>
       </thead>
       <tbody>
         ${pedidosFiltrados.map(pedido => {
-          const fecha = new Date(pedido.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          const fecha = pedido.created_at
+            ? new Date(pedido.created_at).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+            : '-';
           const productos = pedido.items ? pedido.items.map(i => {
             const esGranel = i.nombre && i.nombre.toLowerCase().includes('(granel)');
             return esGranel ? `${i.nombre} ($${i.cantidad.toLocaleString('es-CL')})` : `${i.nombre} (${i.cantidad}x)`;
@@ -7210,13 +7397,18 @@ function renderizarHistorialCronologico() {
           const metodoPago = obtenerEmojiMetodoPago(pedido.metodo_pago);
           const estado = pedido.estado === 'ANULADO' ? '🚫 Anulado' : (pedido.entregado ? '✅ Entregado' : '⏳ Pendiente');
           const colorEstado = pedido.estado === 'ANULADO' ? '#ef4444' : (pedido.entregado ? '#10b981' : '#f59e0b');
+          const nombreCliente = escaparHtmlHistorial(pedido.nombre || 'Sin nombre');
+          const telefono = escaparHtmlHistorial(pedido.telefono || '-');
+          const productosSeguro = escaparHtmlHistorial(productos);
+          const direccion = pedido.direccion ? `<div style="font-size:0.75rem;color:#64748b;margin-top:4px;">📍 ${escaparHtmlHistorial(pedido.direccion)}</div>` : '';
+          const notas = pedido.notas ? `<div style="font-size:0.75rem;color:#7c3aed;margin-top:4px;">📝 ${escaparHtmlHistorial(pedido.notas)}</div>` : '';
           
           return `
             <tr style="border-bottom:1px solid #e5e7eb;">
               <td style="padding:12px;">${fecha}</td>
-              <td style="padding:12px;font-weight:600;">${pedido.nombre || 'Sin nombre'}</td>
-              <td style="padding:12px;">${pedido.telefono || '-'}</td>
-              <td style="padding:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${productos}">${productos}</td>
+              <td style="padding:12px;font-weight:600;">${nombreCliente}${direccion}${notas}</td>
+              <td style="padding:12px;">${telefono}</td>
+              <td style="padding:12px;white-space:normal;line-height:1.45;" title="${productosSeguro}">${productosSeguro}</td>
               <td style="padding:12px;text-align:right;font-weight:700;color:#10b981;">$${(pedido.total || 0).toLocaleString()}</td>
               <td style="padding:12px;text-align:center;">${metodoPago}</td>
               <td style="padding:12px;text-align:center;color:${colorEstado};font-weight:600;">${estado}</td>
@@ -7294,8 +7486,8 @@ function renderizarRankingVIP() {
           return `
             <tr style="border-bottom:1px solid #e5e7eb;${bgColor}">
               <td style="padding:12px;text-align:center;font-size:1.2rem;font-weight:700;">${medalla}</td>
-              <td style="padding:12px;font-weight:600;">${cliente.nombre}</td>
-              <td style="padding:12px;">${cliente.telefono}</td>
+              <td style="padding:12px;font-weight:600;">${escaparHtmlHistorial(cliente.nombre)}</td>
+              <td style="padding:12px;">${escaparHtmlHistorial(cliente.telefono)}</td>
               <td style="padding:12px;text-align:center;font-weight:600;color:#4b6cb7;">${cliente.cantidadPedidos}</td>
               <td style="padding:12px;text-align:right;font-weight:700;font-size:1.1rem;color:#10b981;">$${cliente.totalCompras.toLocaleString()}</td>
               <td style="padding:12px;text-align:right;color:#6b7280;">$${ticketPromedio.toLocaleString()}</td>
@@ -7317,12 +7509,17 @@ function obtenerEmojiMetodoPago(metodo) {
   const metodos = {
     'E': '💵 Efectivo',
     'DC': '💳 Tarjeta',
+    'D': '💳 Débito',
+    'C': '💳 Crédito',
     'TP': '⏳ Transf. Pend.',
+    'T': '⏳ Transferencia',
     'TG': '✅ Transf. Pagada',
     'P': '💰 Pagado',
     'PE': '💵 Pagado Local - Efectivo',
     'PC': '💳 Pagado Local - Tarjeta',
-    'PX': '🔀 Pagado Local - Mixto'
+    'PX': '🔀 Pagado Local - Mixto',
+    'PM': '💰 Mixto - Pendiente',
+    'PMP': '✅ Mixto - Pagado'
   };
   return metodos[metodo] || '❓ ' + metodo;
 }
@@ -7331,34 +7528,54 @@ function obtenerEmojiMetodoPago(metodo) {
  * Filtrar historial por búsqueda
  */
 function filtrarHistorial() {
-  const busqueda = document.getElementById('buscarHistorial').value.toLowerCase().trim();
-  
-  if (!busqueda) {
-    pedidosFiltrados = [...todosLosPedidos];
-  } else {
-    pedidosFiltrados = todosLosPedidos.filter(pedido => {
-      // Buscar en nombre
-      const coincideNombre = (pedido.nombre || '').toLowerCase().includes(busqueda);
-      
-      // Buscar en teléfono
-      const coincideTelefono = (pedido.telefono || '').includes(busqueda);
-      
-      // Buscar en productos
-      let coincideProducto = false;
-      if (pedido.items && Array.isArray(pedido.items)) {
-        coincideProducto = pedido.items.some(item => 
-          (item.nombre || '').toLowerCase().includes(busqueda)
-        );
-      }
-      
-      return coincideNombre || coincideTelefono || coincideProducto;
-    });
-  }
-  
-  // Actualizar estadísticas con datos filtrados
+  aplicarFiltrosHistorial();
+}
+
+function aplicarFiltrosHistorial() {
+  const busqueda = normalizarTextoHistorial(document.getElementById('buscarHistorial').value);
+  const filtroMetodo = document.getElementById('filtroMetodoHistorial').value;
+  const filtroEstado = document.getElementById('filtroEstadoHistorial').value;
+
+  pedidosFiltrados = todosLosPedidos.filter((pedido) => {
+    const grupoMetodo = obtenerGrupoMetodoHistorial(pedido);
+    const estado = obtenerEstadoHistorial(pedido);
+
+    if (filtroMetodo !== 'todos' && grupoMetodo !== filtroMetodo) {
+      return false;
+    }
+
+    if (filtroEstado !== 'todos' && estado !== filtroEstado) {
+      return false;
+    }
+
+    if (!busqueda) {
+      return true;
+    }
+
+    const fechaTexto = pedido.created_at
+      ? new Date(pedido.created_at).toLocaleString('es-CL')
+      : '';
+    const productosTexto = Array.isArray(pedido.items)
+      ? pedido.items.map((item) => `${item.nombre || ''} ${item.cantidad || ''}`).join(' ')
+      : '';
+    const textoCompleto = normalizarTextoHistorial([
+      pedido.nombre,
+      pedido.telefono,
+      pedido.direccion,
+      pedido.notas,
+      pedido.metodo_pago,
+      pedido.estado,
+      fechaTexto,
+      productosTexto
+    ].join(' '));
+
+    return textoCompleto.includes(busqueda);
+  });
+
+  actualizarResumenHistorialResultados();
   actualizarEstadisticas();
+  mostrarTopProductos();
   
-  // Renderizar según modo actual
   if (modoVIP) {
     renderizarRankingVIP();
   } else {
@@ -7388,18 +7605,12 @@ function toggleModoVIP() {
  * Limpiar todos los filtros
  */
 function limpiarFiltrosHistorial() {
-  // Resetear fechas (últimos 30 días)
-  const hoy = new Date();
-  const hace30Dias = new Date();
-  hace30Dias.setDate(hoy.getDate() - 30);
-  
-  document.getElementById('fechaHasta').value = hoy.toISOString().split('T')[0];
-  document.getElementById('fechaDesde').value = hace30Dias.toISOString().split('T')[0];
-  
-  // Limpiar búsqueda
+  document.getElementById('fechaHasta').value = '';
+  document.getElementById('fechaDesde').value = '';
   document.getElementById('buscarHistorial').value = '';
+  document.getElementById('filtroMetodoHistorial').value = 'todos';
+  document.getElementById('filtroEstadoHistorial').value = 'todos';
   
-  // Recargar datos
   cargarHistorialCompleto();
 }
 
@@ -7716,7 +7927,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // Búsqueda en tiempo real
   const inputBuscar = document.getElementById('buscarHistorial');
   if (inputBuscar) {
-    inputBuscar.addEventListener('input', filtrarHistorial);
+    inputBuscar.addEventListener('input', () => {
+      clearTimeout(historialFiltroTimeout);
+      historialFiltroTimeout = setTimeout(() => {
+        filtrarHistorial();
+      }, 180);
+    });
+  }
+
+  const filtroMetodo = document.getElementById('filtroMetodoHistorial');
+  if (filtroMetodo) {
+    filtroMetodo.addEventListener('change', aplicarFiltrosHistorial);
+  }
+
+  const filtroEstado = document.getElementById('filtroEstadoHistorial');
+  if (filtroEstado) {
+    filtroEstado.addEventListener('change', aplicarFiltrosHistorial);
   }
   
   // Botón filtrar por fecha
@@ -7729,6 +7955,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnLimpiar = document.getElementById('btnLimpiarFiltros');
   if (btnLimpiar) {
     btnLimpiar.addEventListener('click', limpiarFiltrosHistorial);
+  }
+
+  const btnExportar = document.getElementById('btnExportarHistorialCompleto');
+  if (btnExportar) {
+    btnExportar.addEventListener('click', exportarHistorialCompletoCSV);
   }
   
   // Cerrar modal al hacer clic fuera

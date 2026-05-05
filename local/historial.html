@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Historial completo de pedidos de reparto">
+  <meta name="theme-color" content="#667eea">
+  <title>Historial | Sabrofood Reparto</title>
+  <link rel="manifest" href="../manifest.json">
+  <link rel="stylesheet" href="style.css?v=20251221">
+  <link rel="stylesheet" href="historial.css?v=2026050401">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../shared/supabase-config.js?v=20251217"></script>
+  <script src="../shared/roles-config.js"></script>
+  <script src="../shared/auth.js?v=20251217"></script>
+  <script src="../shared/route-protection.js"></script>
+  <script>
+    verificarAutenticacionYRedirigir('/repatosabrofood/index.html');
+  </script>
+  <script src="historial.js?v=2026050401" defer></script>
+</head>
+<body class="historial-page-body">
+  <div class="historial-page-shell">
+    <header class="historial-page-header">
+      <div>
+        <p class="historial-page-kicker">Sabrofood Reparto</p>
+        <h1 class="historial-page-title">Historial Completo</h1>
+        <p class="historial-page-subtitle">Vista completa de pedidos, clientes, métodos de pago y productos sin depender de un modal.</p>
+      </div>
+      <div class="historial-page-actions">
+        <a href="./index.html" class="historial-page-btn secondary">← Volver a Reparto</a>
+        <button id="btnCerrarSesionHistorial" class="historial-page-btn danger" type="button">Salir</button>
+      </div>
+    </header>
+
+    <main class="historial-page-main">
+      <section class="historial-toolbar-card">
+        <div class="historial-toolbar-grid">
+          <input type="text" id="buscarHistorial" placeholder="Buscar por nombre, teléfono, producto, dirección, notas o fecha" aria-label="Buscar en historial">
+
+          <select id="filtroMetodoHistorial" aria-label="Filtrar por método de pago">
+            <option value="todos">Todos los métodos</option>
+            <option value="efectivo">Efectivo</option>
+            <option value="tarjeta">Tarjetas</option>
+            <option value="mixto">Pago mixto</option>
+            <option value="transferencia_pendiente">Transferencia pendiente</option>
+            <option value="transferencia_pagada">Transferencia pagada</option>
+            <option value="pagado_local">Pagado en local</option>
+          </select>
+
+          <select id="filtroEstadoHistorial" aria-label="Filtrar por estado del pedido">
+            <option value="todos">Todos los estados</option>
+            <option value="entregados">Entregados</option>
+            <option value="pendientes">Pendientes</option>
+            <option value="anulados">Anulados</option>
+          </select>
+
+          <div class="historial-date-field">
+            <label for="fechaDesde">Desde</label>
+            <input type="date" id="fechaDesde" aria-label="Fecha desde">
+          </div>
+
+          <div class="historial-date-field">
+            <label for="fechaHasta">Hasta</label>
+            <input type="date" id="fechaHasta" aria-label="Fecha hasta">
+          </div>
+
+          <button id="btnAplicarFiltroFecha" class="historial-page-btn success" type="button">Filtrar</button>
+          <button id="btnLimpiarFiltros" class="historial-page-btn muted" type="button">Limpiar</button>
+          <button id="btnToggleVIP" class="historial-page-btn accent" type="button">Ranking VIP</button>
+          <button id="btnExportarHistorialCompleto" class="historial-page-btn primary" type="button">Exportar CSV</button>
+        </div>
+      </section>
+
+      <section class="historial-inline-status" aria-live="polite">
+        <span id="historialResultadosTexto">Cargando historial...</span>
+        <span id="historialPeriodoTexto">Período: Todo el historial</span>
+      </section>
+
+      <section id="panelEstadisticas" class="historial-stats-grid">
+        <article class="historial-stat-card violet">
+          <span>Total Pedidos</span>
+          <strong id="statTotalPedidos">0</strong>
+        </article>
+        <article class="historial-stat-card green">
+          <span>Total Recaudado</span>
+          <strong id="statTotalRecaudado">$0</strong>
+        </article>
+        <article class="historial-stat-card amber">
+          <span>Clientes Únicos</span>
+          <strong id="statClientesUnicos">0</strong>
+        </article>
+        <article class="historial-stat-card pink">
+          <span>Ticket Promedio</span>
+          <strong id="statTicketPromedio">$0</strong>
+        </article>
+      </section>
+
+      <section id="panelTopProductos" class="historial-panel-card">
+        <div class="historial-panel-heading">
+          <h2>Top 5 Productos Más Vendidos</h2>
+          <p>Ranking por ventas acumuladas en el rango cargado.</p>
+        </div>
+        <div id="listaTopProductos" class="historial-top-grid"></div>
+      </section>
+
+      <section class="historial-panel-card historial-table-panel">
+        <div class="historial-panel-heading sticky-head">
+          <h2 id="historialVistaTitulo">Vista Cronológica</h2>
+          <p id="historialVistaDescripcion">Pedidos completos con datos de cliente, cobro y estado.</p>
+        </div>
+        <div id="historialLoadingState" class="historial-loading-state">Cargando historial completo...</div>
+        <div id="historialTablaWrap" class="historial-table-wrap" hidden>
+          <div id="historialContenido"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
