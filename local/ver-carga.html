@@ -8,7 +8,7 @@
   <title>Manifiesto de Carga | Sabrofood Reparto</title>
   <link rel="manifest" href="../manifest.json">
   <link rel="stylesheet" href="style.css?v=20251221">
-  <link rel="stylesheet" href="ver-carga.css?v=2026051701">
+  <link rel="stylesheet" href="ver-carga.css?v=2026051702">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../shared/supabase-config.js?v=20251217"></script>
   <script src="../shared/roles-config.js"></script>
@@ -17,7 +17,7 @@
   <script>
     verificarAutenticacionYRedirigir('/repatosabrofood/index.html');
   </script>
-  <script src="ver-carga.js?v=2026051701" defer></script>
+  <script src="ver-carga.js?v=2026051702" defer></script>
 </head>
 <body class="carga-page-body">
   <div class="carga-page-shell">
@@ -25,7 +25,6 @@
       <a href="./index.html" class="carga-topbar-link">← Volver a Reparto</a>
       <div class="carga-topbar-actions">
         <button id="btnRecargarCarga" class="carga-topbar-btn" type="button">Actualizar</button>
-        <button id="btnCerrarSesionCarga" class="carga-topbar-btn danger" type="button">Salir</button>
       </div>
     </div>
 
@@ -57,7 +56,6 @@
           </div>
 
           <div class="carga-inline-status" aria-live="polite">
-            <span id="cargaResultadosTexto">Cargando manifiesto...</span>
             <span id="cargaSyncTexto">Sincronizando...</span>
           </div>
         </div>
@@ -84,7 +82,7 @@
         </div>
 
         <div class="carga-page-body-wrap">
-          <div id="cargaLoadingState" class="carga-loading-state">Cargando manifiesto...</div>
+          <div id="cargaLoadingState" class="carga-loading-state"></div>
           <div id="cargaEmptyState" class="carga-empty-state" hidden>No hay productos para mostrar con los filtros actuales.</div>
           <div id="cargaContenido" class="carga-sections" hidden></div>
         </div>

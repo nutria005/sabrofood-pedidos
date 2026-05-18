@@ -1,8 +1,8 @@
 // ===================================
 // 🚚 SABROFOOD REPARTO PWA SERVICE WORKER
 // ===================================
-// Versión: 2.1.1-ver-carga-refresh
-// Fecha: 13-05-2026
+// Versión: 2.1.2-ver-carga-sync-fix
+// Fecha: 17-05-2026
 // 
 // CAMBIOS EN ESTA VERSIÓN:
 // - Network First para archivos críticos (script.js, style.css, index.html)
@@ -13,7 +13,7 @@
 // - Timeout de 3s en peticiones de red
 // ===================================
 
-const CACHE_VERSION = 'sabrofood-reparto-v2.1.1-ver-carga-refresh';
+const CACHE_VERSION = 'sabrofood-reparto-v2.1.2-ver-carga-sync-fix';
 const CACHE_NAME = `${CACHE_VERSION}-static`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 

@@ -510,11 +510,12 @@ function setSyncStatus(texto, tipo = 'ok') {
       : 'carga-sync-ok';
 }
 
-function mostrarLoading(texto = 'Cargando manifiesto...') {
+function mostrarLoading(texto = '') {
   document.getElementById('cargaLoadingState').hidden = false;
   document.getElementById('cargaLoadingState').textContent = texto;
   document.getElementById('cargaEmptyState').hidden = true;
   document.getElementById('cargaContenido').hidden = true;
+  document.getElementById('cargaContenido').innerHTML = '';
 }
 
 function ocultarLoading() {
@@ -627,28 +628,71 @@ async function obtenerPedidosPendientes() {
   }
 
   while (true) {
-    let query = supabase_client
+    const { data, error } = await supabase_client
       .from('pedidos')
       .select('*')
-      .eq('entregado', false)
       .order('created_at', { ascending: false })
       .range(desde, desde + CARGA_PAGE_SIZE - 1);
 
-    if (repartidorActivo) {
-      query = query.eq('asignado_a', repartidorActivo);
-    }
-
-    const { data, error } = await query;
-
     if (error) throw error;
 
-    const bloque = (data || []).filter((pedido) => pedido?.estado !== 'ANULADO');
+    const lote = data || [];
+    const bloque = lote.filter((pedido) => {
+      const estaPendiente = pedido?.entregado !== true;
+      const noAnulado = pedido?.estado !== 'ANULADO';
+      const coincideRepartidor = !repartidorActivo || pedido?.asignado_a === repartidorActivo;
+      return estaPendiente && noAnulado && coincideRepartidor;
+    });
     pedidos = pedidos.concat(bloque);
-    if (bloque.length < CARGA_PAGE_SIZE) break;
+    if (lote.length < CARGA_PAGE_SIZE) break;
     desde += CARGA_PAGE_SIZE;
   }
 
   return pedidos;
+}
+
+async function limpiarMarcadosHuerfanos(pedidos = []) {
+  const pedidosValidos = new Set(
+    pedidos
+      .map((pedido) => String(pedido?.id || '').trim())
+      .filter(Boolean)
+  );
+
+  let huerfanosDetectados = 0;
+  const itemsMarcadosCacheDepurado = new Set();
+  const itemsMarcadosDetalleCacheDepurado = new Map();
+  const itemsMarcadosPorPedidoCacheDepurado = new Map();
+
+  itemsMarcadosPorPedidoCache.forEach((items, pedidoId) => {
+    const pedidoCacheKey = String(pedidoId).trim();
+    if (!pedidosValidos.has(pedidoCacheKey)) {
+      huerfanosDetectados += (items || []).length;
+      return;
+    }
+
+    const itemsValidos = (items || []).filter(Boolean);
+    if (itemsValidos.length === 0) {
+      return;
+    }
+
+    itemsMarcadosPorPedidoCacheDepurado.set(pedidoCacheKey, itemsValidos);
+
+    itemsValidos.forEach((item) => {
+      if (item?.checkbox_id) {
+        itemsMarcadosCacheDepurado.add(item.checkbox_id);
+      }
+
+      obtenerClavesCompatibilidadCarga(item?.pedido_id, item).forEach((compatKey) => {
+        itemsMarcadosDetalleCacheDepurado.set(compatKey, item.checkbox_id);
+      });
+    });
+  });
+
+  itemsMarcadosCache = itemsMarcadosCacheDepurado;
+  itemsMarcadosDetalleCache = itemsMarcadosDetalleCacheDepurado;
+  itemsMarcadosPorPedidoCache = itemsMarcadosPorPedidoCacheDepurado;
+
+  return huerfanosDetectados;
 }
 
 async function cargarItemsMarcados() {
@@ -838,9 +882,14 @@ function generarResumenCarga(pedidos = []) {
 }
 
 function obtenerTextoResultados() {
-  const totalPedidos = pedidosFiltradosCarga.length.toLocaleString('es-CL');
-  const totalPedidosBase = todosLosPedidosCarga.length.toLocaleString('es-CL');
-  return `Mostrando ${totalPedidos} pedido(s) activos de ${totalPedidosBase} cargado(s)`;
+  const totalPedidosVisibles = pedidosFiltradosCarga.length;
+  const totalPedidosBase = todosLosPedidosCarga.length;
+
+  if (totalPedidosBase === totalPedidosVisibles) {
+    return `${totalPedidosVisibles.toLocaleString('es-CL')} pedido(s) pendiente(s) en esta vista`;
+  }
+
+  return `${totalPedidosVisibles.toLocaleString('es-CL')} de ${totalPedidosBase.toLocaleString('es-CL')} pedido(s) pendiente(s) en esta vista`;
 }
 
 function setTextContentIfExists(id, value) {
@@ -858,8 +907,6 @@ function actualizarEstadisticasCarga(resumen) {
   setTextContentIfExists('resumenRutaA', resumen.itemsPorPrioridad.A.bultos.toLocaleString('es-CL'));
   setTextContentIfExists('resumenRutaB', resumen.itemsPorPrioridad.B.bultos.toLocaleString('es-CL'));
   setTextContentIfExists('resumenRutaC', resumen.itemsPorPrioridad.C.bultos.toLocaleString('es-CL'));
-  const descripcionFecha = obtenerDescripcionFiltroFecha();
-  setTextContentIfExists('cargaResultadosTexto', `${obtenerTextoResultados()} · ${resumen.totalLineas.toLocaleString('es-CL')} linea(s) · ${descripcionFecha}`);
 }
 
 function renderizarResumenPreparacionCarga(pedidos = []) {
@@ -898,7 +945,7 @@ function renderizarResumenPreparacionCarga(pedidos = []) {
       <header class="carga-preparacion-header">
         <div class="carga-preparacion-header-copy">
           <h2>Resumen de Preparacion</h2>
-          <p>Totales consolidados por producto segun los filtros activos.</p>
+          <p>Te muestra cuanto producto debes preparar para los pedidos visibles de este filtro.</p>
         </div>
         <div class="carga-preparacion-header-actions">
           <div class="carga-preparacion-totales">
@@ -983,6 +1030,7 @@ function renderizarCarga() {
 
   const hayItems = ['A', 'B', 'C'].some((prioridad) => resumen.itemsPorPrioridad[prioridad].items.length > 0);
   if (!hayItems) {
+    contenedor.innerHTML = '';
     contenedor.hidden = true;
     empty.hidden = false;
     return;
@@ -1010,7 +1058,7 @@ function restaurarFiltrosCarga() {
   try {
     const raw = JSON.parse(localStorage.getItem(CARGA_FILTERS_KEY) || '{}');
     document.getElementById('buscarCarga').value = raw.busqueda || CARGA_DEFAULT_FILTERS.busqueda;
-    window.filtroRapidoCargaActual = raw.filtroRapido === 'manana' ? 'manana' : CARGA_DEFAULT_FILTERS.filtroRapido;
+    window.filtroRapidoCargaActual = CARGA_DEFAULT_FILTERS.filtroRapido;
     document.getElementById('filtroEstadoCarga').value = raw.estado || CARGA_DEFAULT_FILTERS.estado;
   } catch (error) {
     console.warn('No se pudieron restaurar filtros de carga:', error);
@@ -1031,7 +1079,7 @@ function aplicarFiltrosCarga() {
   sincronizarBotonesFecha();
 
   pedidosFiltradosCarga = todosLosPedidosCarga.filter((pedido) => {
-    const fechaPedido = obtenerFechaOperativaPedido(pedido);
+    const fechaPedido = obtenerFechaISO(pedido?.fecha || '');
     if (fechaObjetivo && fechaPedido !== fechaObjetivo) return false;
 
     if (busqueda) {
@@ -1370,7 +1418,7 @@ async function handleCheckboxChange(event) {
 async function recargarVistaCarga(opciones = {}) {
   const { silencioso = false } = opciones;
   if (!silencioso) {
-    mostrarLoading('Actualizando manifiesto...');
+    mostrarLoading();
     setSyncStatus('Consultando datos en la nube...', 'warn');
   }
 
@@ -1380,9 +1428,15 @@ async function recargarVistaCarga(opciones = {}) {
       cargarItemsMarcados()
     ]);
 
+    const huerfanosEliminados = await limpiarMarcadosHuerfanos(pedidos);
+
     await cargarMetadatosProductosCarga(pedidos);
     todosLosPedidosCarga = pedidos;
     aplicarFiltrosCarga();
+
+    if (huerfanosEliminados > 0) {
+      setSyncStatus(`Se limpiaron ${huerfanosEliminados} marcado(s) huerfano(s)`, 'warn');
+    }
   } catch (error) {
     console.error('Error recargando manifiesto:', error);
     mostrarLoading('No se pudo cargar el manifiesto de carga.');
@@ -1446,10 +1500,13 @@ function conectarEventos() {
   document.getElementById('filtroEstadoCarga').addEventListener('change', aplicarFiltrosCarga);
   document.getElementById('btnLimpiarFiltrosCarga').addEventListener('click', limpiarFiltrosCarga);
   document.getElementById('btnRecargarCarga').addEventListener('click', () => recargarVistaCarga());
-  document.getElementById('btnCerrarSesionCarga').addEventListener('click', async () => {
-    await supabaseLogout();
-    window.location.href = '../index.html';
-  });
+  const btnCerrarSesionCarga = document.getElementById('btnCerrarSesionCarga');
+  if (btnCerrarSesionCarga) {
+    btnCerrarSesionCarga.addEventListener('click', async () => {
+      await supabaseLogout();
+      window.location.href = '../index.html';
+    });
+  }
 }
 
 async function verificarPermisoCarga() {
