@@ -614,6 +614,51 @@ async function cambiarPrioridad(docId, nuevaPrioridad) {
     ErrorHandler.mostrarError('Error inesperado al cambiar prioridad');
   }
 }
+
+const PEDIDO_TELEFONO_SECUNDARIO_TAG = 'TEL2:';
+
+function validarTelefonoOpcional(telefono) {
+  const valor = String(telefono || '').trim();
+  if (!valor) {
+    return { valido: true, valor: '' };
+  }
+
+  return Validator.validarTelefono(valor);
+}
+
+function extraerTelefonoSecundarioDeNotas(notas) {
+  const texto = String(notas || '').trim();
+  if (!texto) {
+    return { telefonoSecundario: '', notasLimpias: '' };
+  }
+
+  const partes = texto.split('|').map(parte => parte.trim()).filter(Boolean);
+  let telefonoSecundario = '';
+  const notasLimpias = partes.filter((parte) => {
+    if (parte.startsWith(PEDIDO_TELEFONO_SECUNDARIO_TAG)) {
+      telefonoSecundario = parte.slice(PEDIDO_TELEFONO_SECUNDARIO_TAG.length).trim();
+      return false;
+    }
+    return true;
+  }).join(' | ');
+
+  return { telefonoSecundario, notasLimpias };
+}
+
+function combinarNotasConTelefonoSecundario(notas, telefonoSecundario) {
+  const { notasLimpias } = extraerTelefonoSecundarioDeNotas(notas);
+  const partes = [];
+
+  if (telefonoSecundario) {
+    partes.push(`${PEDIDO_TELEFONO_SECUNDARIO_TAG} ${telefonoSecundario}`);
+  }
+
+  if (notasLimpias) {
+    partes.push(notasLimpias);
+  }
+
+  return partes.join(' | ') || null;
+}
 async function actualizarOrdenEntrega(docId, nuevoOrden) {
   // Validar el nuevo orden
   if (isNaN(nuevoOrden) || nuevoOrden < 0) {
@@ -1280,41 +1325,36 @@ function activarTiempoRealCarga() {
             itemsMarcadosCache.add(checkboxId);
             const compatKey = crearClaveCompatibilidadCarga(payload.new?.pedido_id, payload.new || {});
             itemsMarcadosDetalleCache.set(compatKey, checkboxId);
+            const pedidoCacheKey = normalizarPedidoId(payload.new?.pedido_id || '');
+            if (pedidoCacheKey) {
+              const listaPedido = itemsMarcadosPorPedidoCache.get(pedidoCacheKey) || [];
+              const sinDuplicado = listaPedido.filter((item) => item.checkbox_id !== checkboxId);
+              sinDuplicado.push(payload.new);
+              itemsMarcadosPorPedidoCache.set(pedidoCacheKey, sinDuplicado);
+            }
           } else {
             itemsMarcadosCache.delete(checkboxId);
             const compatKey = crearClaveCompatibilidadCarga(payload.new?.pedido_id, payload.new || {});
             itemsMarcadosDetalleCache.delete(compatKey);
+            const pedidoCacheKey = normalizarPedidoId(payload.new?.pedido_id || '');
+            if (pedidoCacheKey && itemsMarcadosPorPedidoCache.has(pedidoCacheKey)) {
+              const restantes = (itemsMarcadosPorPedidoCache.get(pedidoCacheKey) || [])
+                .filter((item) => item.checkbox_id !== checkboxId);
+              itemsMarcadosPorPedidoCache.set(pedidoCacheKey, restantes);
+            }
           }
         } else if (payload.eventType === 'DELETE') {
           itemsMarcadosCache.delete(checkboxId);
           const compatKey = crearClaveCompatibilidadCarga(payload.old?.pedido_id, payload.old || {});
           itemsMarcadosDetalleCache.delete(compatKey);
-        }
-        
-        // Actualizar UI si el modal está abierto
-        const modal = document.getElementById('modalCarga');
-        if (modal && modal.style.display === 'flex') {
-          const itemCarga = buscarItemCargaPorPersistencia(checkboxId);
-          const checkbox = itemCarga?.querySelector('.checkbox-carga');
-          
-          if (checkbox && itemCarga) {
-            const checkboxActualId = itemCarga.dataset.checkboxId;
-            const legacyCheckboxId = itemCarga.dataset.legacyCheckboxId;
-            const compatKey = itemCarga.dataset.compatKey;
-            const persistedCheckboxId = itemsMarcadosCache.has(checkboxActualId)
-              ? checkboxActualId
-              : (legacyCheckboxId && itemsMarcadosCache.has(legacyCheckboxId)
-                ? legacyCheckboxId
-                : (compatKey && itemsMarcadosDetalleCache.has(compatKey)
-                  ? itemsMarcadosDetalleCache.get(compatKey)
-                  : ''));
-            const estaMarcado = Boolean(persistedCheckboxId);
-            checkbox.checked = estaMarcado;
-            itemCarga.classList.toggle('checked', estaMarcado);
-            itemCarga.dataset.persistedCheckboxId = persistedCheckboxId;
-            console.log(`✅ Checkbox ${checkboxId} actualizado en UI: ${estaMarcado}`);
+          const pedidoCacheKey = normalizarPedidoId(payload.old?.pedido_id || '');
+          if (pedidoCacheKey && itemsMarcadosPorPedidoCache.has(pedidoCacheKey)) {
+            const restantes = (itemsMarcadosPorPedidoCache.get(pedidoCacheKey) || [])
+              .filter((item) => item.checkbox_id !== checkboxId);
+            itemsMarcadosPorPedidoCache.set(pedidoCacheKey, restantes);
           }
         }
+        
       }
     )
     .subscribe((status) => {
@@ -1641,14 +1681,15 @@ async function guardarPedido() {
   }
 
   try {
-    const [nombreEl, direccionEl, telefonoEl, fechaEl, metodoEl, notasEl, rutaEl] = 
-      getElements('nombre', 'direccion', 'telefono', 'fechaEntrega', 'metodoPago', 'notas', 'rutaSelect');
+    const [nombreEl, direccionEl, telefonoEl, telefonoSecundarioEl, fechaEl, metodoEl, notasEl, rutaEl] = 
+      getElements('nombre', 'direccion', 'telefono', 'telefonoSecundario', 'fechaEntrega', 'metodoPago', 'notas', 'rutaSelect');
     
     // Validar todos los campos
     const validaciones = {
       nombre: Validator.validarNombre(nombreEl.value),
       direccion: Validator.validarDireccion(direccionEl.value),
       telefono: Validator.validarTelefono(telefonoEl.value),
+      telefonoSecundario: validarTelefonoOpcional(telefonoSecundarioEl?.value),
       fecha: Validator.validarFecha(fechaEl.value),
       nota: Validator.validarNota(notasEl.value)
     };
@@ -1680,7 +1721,7 @@ async function guardarPedido() {
       telefono: validaciones.telefono.valor,
       fecha: validaciones.fecha.valor,
       metodo_pago: metodoEl.value || 'E',
-      notas: validaciones.nota.valor,
+      notas: combinarNotasConTelefonoSecundario(validaciones.nota.valor, validaciones.telefonoSecundario.valor),
       total: lineasPedido.reduce((acc, p) => acc + (p.cantidad * p.precio), 0),
       entregado: false,
       prioridad: rutaEl.value || 'C', // Prioridad desde selector de ruta (por defecto C)
@@ -2560,7 +2601,7 @@ async function eliminarPedido(docId){
     // Obtener datos del pedido para verificar que no esté entregado
     const { data: pedido, error: errorFetch } = await client
       .from('pedidos')
-      .select('entregado, nombre, telefono')
+      .select('*')
       .eq('id', docId)
       .single();
       
@@ -2574,6 +2615,8 @@ async function eliminarPedido(docId){
       alert('❌ ERROR: No se puede eliminar un pedido que ya fue entregado.\n\nPor seguridad, solo se pueden eliminar pedidos pendientes.');
       return;
     }
+
+    await devolverStockItemsMarcados(docId, pedido);
     
     // Eliminar pedido de Supabase
     const { error } = await client.from('pedidos').delete().eq('id', docId);
@@ -2768,12 +2811,14 @@ async function editarPedido(docId) {
     }
     
     // Precargar datos en el formulario
+    const datosNotas = extraerTelefonoSecundarioDeNotas(pedido.notas);
     document.getElementById('nombre').value = pedido.nombre || '';
     document.getElementById('direccion').value = pedido.direccion || '';
     document.getElementById('telefono').value = pedido.telefono || '';
+    document.getElementById('telefonoSecundario').value = datosNotas.telefonoSecundario || '';
     document.getElementById('metodoPago').value = pedido.metodo_pago || 'E';
     document.getElementById('fechaEntrega').value = pedido.fecha || '';
-    document.getElementById('notas').value = pedido.notas || '';
+    document.getElementById('notas').value = datosNotas.notasLimpias || '';
     
     // Cargar productos
     lineasPedido = Array.isArray(pedido.items) ? [...pedido.items] : [];
@@ -2807,6 +2852,7 @@ async function actualizarPedido(docId) {
     // Validar campos obligatorios
     const direccion = document.getElementById('direccion').value.trim();
     const telefono = document.getElementById('telefono').value.trim();
+    const telefonoSecundario = document.getElementById('telefonoSecundario').value.trim();
     
     if (!direccion) {
       alert('La dirección es obligatoria');
@@ -2815,6 +2861,12 @@ async function actualizarPedido(docId) {
     
     if (!telefono) {
       alert('El teléfono es obligatorio');
+      return;
+    }
+
+    const validacionTelefonoSecundario = validarTelefonoOpcional(telefonoSecundario);
+    if (!validacionTelefonoSecundario.valido) {
+      alert(validacionTelefonoSecundario.error);
       return;
     }
     
@@ -2835,7 +2887,7 @@ async function actualizarPedido(docId) {
       fecha: document.getElementById('fechaEntrega').value,
       items: lineasPedido,
       total: total,
-      notas: document.getElementById('notas').value.trim() || null,
+      notas: combinarNotasConTelefonoSecundario(document.getElementById('notas').value.trim(), validacionTelefonoSecundario.valor),
       updated_at: new Date().toISOString()
     };
     
@@ -4650,16 +4702,6 @@ function crearCheckboxIdCarga(pedidoId, item, itemIndex = 0) {
   return `chk_${normalizarPedidoId(pedidoId)}_${productoToken}_${itemIndex}_${normalizarNombreProducto(nombreProducto)}`;
 }
 
-function buscarItemCargaPorPersistencia(checkboxId) {
-  if (!checkboxId) return null;
-
-  return document.querySelector(
-    `.item-carga[data-checkbox-id="${checkboxId}"], ` +
-    `.item-carga[data-legacy-checkbox-id="${checkboxId}"], ` +
-    `.item-carga[data-persisted-checkbox-id="${checkboxId}"]`
-  );
-}
-
 function crearClaveCompatibilidadCarga(pedidoId, item = {}) {
   const pedidoToken = normalizarPedidoId(pedidoId);
   const cantidad = parseInt(item.cantidad) || 0;
@@ -4686,271 +4728,66 @@ function obtenerCheckboxPersistido(item, itemsMarcados) {
     return itemsMarcadosDetalleCache.get(item.compatKey) || '';
   }
 
+  const pedidoId = item.pedidoId || item.pedido_id || '';
+  const pedidoCacheKey = normalizarPedidoId(pedidoId);
+  if (pedidoCacheKey && itemsMarcadosPorPedidoCache.has(pedidoCacheKey)) {
+    const coincidenciasPedido = itemsMarcadosPorPedidoCache.get(pedidoCacheKey) || [];
+    const productoId = Number(item.productoId || item.producto_id || 0) || null;
+    const cantidad = parseInt(item.cantidad, 10) || 0;
+    const nombreNormalizado = normalizarNombreProducto(item.nombre || item.nombre_producto || '');
+
+    const coincidencia = coincidenciasPedido.find((registro) => {
+      const registroProductoId = Number(registro.producto_id || registro.productoId || 0) || null;
+      const registroCantidad = parseInt(registro.cantidad, 10) || 0;
+      const registroNombre = normalizarNombreProducto(registro.nombre_producto || registro.nombre || '');
+
+      if (productoId && registroProductoId === productoId && registroCantidad === cantidad) return true;
+      if (nombreNormalizado && registroNombre === nombreNormalizado && registroCantidad === cantidad) return true;
+      if (productoId && registroProductoId === productoId) return true;
+      if (nombreNormalizado && registroNombre === nombreNormalizado) return true;
+      return false;
+    });
+
+    if (coincidencia?.checkbox_id) {
+      return coincidencia.checkbox_id;
+    }
+  }
+
   return '';
 }
 
-/**
- * Generar resumen de carga desde los pedidos visibles
- * AGRUPADO POR PRIORIDAD (Ruta A, B, C)
- */
-function generarResumenCarga() {
-  // Usar los datos actualmente filtrados/visibles en pantalla
-  const datosActuales = datosFiltrados.length > 0 ? datosFiltrados : datosLocal;
-  
-  // Obtener solo pedidos pendientes y con items (filtrado eficiente)
-  const pedidosPendientes = datosActuales.filter(p => !p.entregado && p.items?.length > 0);
-  
-  if (pedidosPendientes.length === 0) {
-    return { itemsPorPrioridad: {}, totalBultos: 0 };
-  }
-  
-  // Arrays separados por prioridad - SIN agrupar (cada producto es independiente)
-  const arraysPrioridad = {
-    A: [],
-    B: [],
-    C: []
-  };
-  
-  // Procesar todos los pedidos - CREAR UNA LÍNEA POR CADA PRODUCTO DE CADA PEDIDO
-  for (const pedido of pedidosPendientes) {
-    const prioridad = pedido.prioridad || 'C';
-    const nombreCliente = pedido.nombre || 'Cliente sin nombre';
-    const pedidoId = pedido.id;
-    
-    // Procesar items del pedido - CADA UNO GENERA UNA LÍNEA INDEPENDIENTE
-    for (const [itemIndex, item] of pedido.items.entries()) {
-      const nombreProducto = item.nombre || 'Producto sin nombre';
-      const cantidad = parseInt(item.cantidad) || 1;
-      const productoId = item.producto_id || null;
-      
-      // CLAVE: NO agrupar, crear entrada independiente por pedido
-      arraysPrioridad[prioridad].push({
-        nombre: nombreProducto,
-        cantidad: cantidad,
-        cliente: nombreCliente,
-        pedidoId: pedidoId,
-        productoId: productoId,
-        checkboxId: crearCheckboxIdCarga(pedidoId, item, itemIndex),
-        legacyCheckboxId: crearCheckboxIdLegacy(pedidoId, nombreProducto),
-        compatKey: crearClaveCompatibilidadCarga(pedidoId, item)
-      });
-    }
-  }
-  
-  // Ordenar cada array alfabéticamente por nombre de producto
-  // Así, productos iguales de distintos pedidos aparecen juntos visualmente
-  const procesarArray = (array) => {
-    const itemsOrdenados = array.sort((a, b) => a.nombre.localeCompare(b.nombre));
-    
-    // CORRECCIÓN: Productos a granel cuentan como 1 bulto, no el precio
-    const bultos = itemsOrdenados.reduce((sum, item) => {
-      const esGranel = item.nombre && (
-        item.nombre.toLowerCase().includes('(granel)') || 
-        item.nombre.toLowerCase().includes('granel')
-      );
-      
-      // Si es granel → 1 bulto (el precio está en "cantidad" pero es 1 bulto físico)
-      // Si NO es granel → usar cantidad normal
-      return sum + (esGranel ? 1 : item.cantidad);
-    }, 0);
-    
-    return { items: itemsOrdenados, bultos };
-  };
-  
-  const resultadoA = procesarArray(arraysPrioridad.A);
-  const resultadoB = procesarArray(arraysPrioridad.B);
-  const resultadoC = procesarArray(arraysPrioridad.C);
-  
-  return { 
-    itemsPorPrioridad: {
-      A: resultadoA,
-      B: resultadoB,
-      C: resultadoC
-    },
-    totalBultos: resultadoA.bultos + resultadoB.bultos + resultadoC.bultos
-  };
+function esRpcCambioCargaNoDisponible(error) {
+  const codigo = String(error?.code || '').toUpperCase();
+  const mensaje = String(error?.message || '').toLowerCase();
+  return codigo === 'PGRST202' || codigo === '42883' || mensaje.includes('procesar_cambio_carga');
 }
 
-/**
- * Mostrar modal de resumen de carga AGRUPADO POR PRIORIDAD
- */
-async function mostrarModalCarga() {
-  const modal = document.getElementById('modalCarga');
-  const modalBody = document.getElementById('modalCargaBody');
-  const totalBultosEl = document.getElementById('totalBultos');
-  
-  if (!modal || !modalBody || !totalBultosEl) {
-    alert('Error: No se pudo abrir el modal de carga');
-    return;
+async function procesarCambioCargaAtomico(checkboxId, itemInfo, marcado) {
+  const client = getSupabaseClient();
+  if (!client) {
+    console.error('❌ Cliente no disponible para RPC de carga');
+    return null;
   }
-  
-  // Mostrar modal inmediatamente con loading
-  modal.style.display = 'flex';
-  modal.setAttribute('aria-hidden', 'false');
-  modalBody.innerHTML = '<div style="text-align: center; padding: 40px; color: #667eea;">⏳ Cargando desde Supabase...</div>';
-  
-  // Cargar items marcados desde Supabase ANTES de renderizar
-  const itemsMarcados = await cargarItemsMarcados();
-  console.log('🔍 ITEMS MARCADOS CARGADOS:', itemsMarcados.size, 'items');
-  console.log('🔍 IDs cargados:', Array.from(itemsMarcados));
-  
-  // Generar contenido en el siguiente frame para no bloquear
-  requestAnimationFrame(() => {
-    const { itemsPorPrioridad, totalBultos } = generarResumenCarga();
-  
-  console.log('Items por prioridad:', itemsPorPrioridad);
-  console.log('Total bultos:', totalBultos);
-  
-  // Verificar si hay productos para cargar
-  const hayProductos = (itemsPorPrioridad.A?.items.length || 0) + 
-                       (itemsPorPrioridad.B?.items.length || 0) + 
-                       (itemsPorPrioridad.C?.items.length || 0) > 0;
-  
-  if (!hayProductos) {
-    const datosActuales = datosFiltrados.length > 0 ? datosFiltrados : datosLocal;
-    const totalPendientes = datosActuales.filter(p => !p.entregado).length;
-    
-    modalBody.innerHTML = `
-      <div class="mensaje-vacio-carga">
-        📦 No hay productos para cargar
-        <br><br>
-        <small style="color: #6b7280;">
-          ${totalPendientes === 0 
-            ? '✅ ¡Todos los pedidos visibles ya fueron entregados!' 
-            : '⚠️ Los pedidos no tienen productos registrados'}
-          <br><br>
-          <strong>Datos actuales:</strong><br>
-          • Pedidos visibles: ${datosActuales.length}<br>
-          • Pendientes: ${totalPendientes}<br>
-          • Entregados: ${datosActuales.filter(p => p.entregado).length}
-        </small>
-      </div>
-    `;
-    totalBultosEl.textContent = '0';
-  } else {
-    // Construir HTML simple y eficiente
-    let html = '';
-    let idx = 0;
-    
-    // Items marcados ya cargados desde Supabase (variable externa: itemsMarcados)
-    
-    // Helper optimizado con persistencia - NUEVO FORMATO (producto + cliente)
-    const genSeccion = (d, i, t, c) => {
-      if (!d?.items.length) return '';
-      let items = '';
-      for (const item of d.items) {
-        // Usar el checkboxId único generado en generarResumenCarga
-        const checkboxId = item.checkboxId || `check-${idx}`;
-        const legacyCheckboxId = item.legacyCheckboxId || '';
-        const compatKey = item.compatKey || '';
-        const persistedCheckboxId = obtenerCheckboxPersistido(item, itemsMarcados);
-        const estaMarcado = Boolean(persistedCheckboxId);
-        const checked = estaMarcado ? 'checked' : '';
-        const checkedClass = estaMarcado ? ' checked' : '';
-        
-        console.log(`🔍 Renderizando: ${checkboxId} | Marcado: ${estaMarcado} | Producto: ${item.nombre}`);
-        
-        // Mostrar producto grande y cliente pequeño debajo
-        // Para productos granel, mostrar cantidad como monto ($20000)
-        const esGranel = item.nombre.toLowerCase().includes('(granel)');
-        const cantidadMostrar = esGranel ? `$${item.cantidad.toLocaleString('es-CL')}` : item.cantidad;
-        
-        items += `
-          <div class="item-carga${checkedClass}"
-            data-checkbox-id="${checkboxId}"
-            data-legacy-checkbox-id="${legacyCheckboxId}"
-            data-persisted-checkbox-id="${persistedCheckboxId}"
-               data-compat-key="${compatKey}"
-            data-producto-id="${item.productoId || ''}"
-            data-cantidad="${item.cantidad}"
-            data-nombre="${item.nombre}"
-            data-pedido-id="${item.pedidoId}">
-            <input type="checkbox" class="checkbox-carga" id="${checkboxId}" ${checked} onchange="toggleItemCargaCheckbox(this)">
-            <label for="${checkboxId}" class="item-texto">
-              <div class="item-producto-nombre">${item.nombre}</div>
-              <div class="item-cliente-nombre">Para: ${item.cliente}</div>
-            </label>
-            <span class="item-cantidad">${cantidadMostrar}</span>
-          </div>`;
-        idx++;
-      }
-      return `<div class="seccion-prioridad ${c}"><div class="seccion-header"><span class="seccion-icono">${i}</span><span class="seccion-titulo">${t}</span><span class="seccion-badge">${d.bultos} bultos</span></div><div class="seccion-items">${items}</div></div>`;
-    };
-    
-    // Construir todo en una sola asignación
-    html = genSeccion(itemsPorPrioridad.A, '🔴', 'RUTA A - ALTA PRIORIDAD', 'seccion-prioridad-a') +
-           genSeccion(itemsPorPrioridad.B, '🟠', 'RUTA B - MEDIA PRIORIDAD', 'seccion-prioridad-b') +
-           genSeccion(itemsPorPrioridad.C, '🟢', 'RUTA C - BAJA PRIORIDAD', 'seccion-prioridad-c');
-    
-    // Single DOM write
-    modalBody.innerHTML = html;
-    totalBultosEl.textContent = totalBultos;
-  }
+
+  const { data, error } = await client.rpc('procesar_cambio_carga', {
+    p_checkbox_id: checkboxId,
+    p_pedido_id: itemInfo?.pedidoId || null,
+    p_producto_id: itemInfo?.productoId || null,
+    p_cantidad: itemInfo?.cantidad || 0,
+    p_nombre_producto: itemInfo?.nombre || '',
+    p_marcado: Boolean(marcado)
   });
-}
 
-/**
- * MEJORA 4: Toggle item con onchange directo en el checkbox
- * Guarda/elimina items marcados en Supabase usando ID único (pedido + producto)
- * @param {HTMLInputElement} checkbox - El checkbox que cambió
- */
-async function toggleItemCargaCheckbox(checkbox) {
-  const itemCarga = checkbox.closest('.item-carga');
-  if (!itemCarga) return;
-  
-  const checkboxId = itemCarga.dataset.checkboxId;
-  const persistedCheckboxId = itemCarga.dataset.persistedCheckboxId || checkboxId;
-  const checked = checkbox.checked;
-  
-  console.log(`🔄 Toggle checkbox: ${checkboxId} -> ${checked ? 'MARCADO' : 'DESMARCADO'}`);
-  
-  // Actualizar UI
-  itemCarga.classList.toggle('checked', checked);
-  
-  checkbox.disabled = true;
-
-  try {
-    const itemInfo = {
-      productoId: itemCarga.dataset.productoId ? parseInt(itemCarga.dataset.productoId) : null,
-      cantidad: parseInt(itemCarga.dataset.cantidad) || 0,
-      nombre: itemCarga.dataset.nombre || '',
-      pedidoId: itemCarga.dataset.pedidoId || ''
-    };
-
-    if (checked) {
-      await agregarItemMarcado(checkboxId, itemInfo);
-      itemCarga.dataset.persistedCheckboxId = checkboxId;
-    } else {
-      await eliminarItemMarcado(persistedCheckboxId);
-      itemCarga.dataset.persistedCheckboxId = '';
+  if (error) {
+    if (esRpcCambioCargaNoDisponible(error)) {
+      return null;
     }
-  } catch (error) {
-    console.error('❌ Error al persistir checkbox de carga:', error);
-    checkbox.checked = !checked;
-    itemCarga.classList.toggle('checked', !checked);
-  } finally {
-    checkbox.disabled = false;
+    throw error;
   }
+
+  return Array.isArray(data) ? (data[0] || null) : data;
 }
 
-/**
- * DEPRECATED: Antigua función toggleItemCarga (mantener por compatibilidad)
- */
-function toggleItemCarga(itemCarga, event) {
-  console.warn('⚠️ toggleItemCarga está deprecated, usa toggleItemCargaCheckbox');
-}
-
-/**
- * Cerrar modal de resumen de carga
- */
-function cerrarModalCarga() {
-  const modal = document.getElementById('modalCarga');
-  
-  modal.style.display = 'none';
-  modal.setAttribute('aria-hidden', 'true');
-}
-
-// Event listeners para el modal de carga
 document.addEventListener('DOMContentLoaded', function() {
   // Limpiar localStorage del zoom eliminado
   localStorage.removeItem('app_zoom');
@@ -5001,37 +4838,6 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log(`📐 Densidad aplicada: ${Math.round(f * 100)}%`);
   }
   
-  const btnVerCarga = document.getElementById('btnVerCarga');
-  const btnCerrarCarga = document.getElementById('btnCerrarCarga');
-  const modalBackdrop = document.getElementById('modalCarga');
-  
-  if (btnVerCarga) {
-    btnVerCarga.addEventListener('click', mostrarModalCarga);
-  }
-  
-  if (btnCerrarCarga) {
-    btnCerrarCarga.addEventListener('click', cerrarModalCarga);
-  }
-  
-  // Cerrar al hacer clic fuera del modal
-  if (modalBackdrop) {
-    modalBackdrop.addEventListener('click', function(e) {
-      if (e.target === modalBackdrop) {
-        cerrarModalCarga();
-      }
-    });
-  }
-  
-  // Cerrar con tecla ESC
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-      const modal = document.getElementById('modalCarga');
-      if (modal && modal.style.display === 'flex') {
-        cerrarModalCarga();
-      }
-    }
-  });
-  
   // ========================================
   // MEJORA 3: CONTADOR DE PROGRESO
   // ========================================
@@ -5046,37 +4852,16 @@ document.addEventListener('DOMContentLoaded', function() {
 // Cache en memoria para items marcados (sincronizado con Supabase)
 let itemsMarcadosCache = new Set();
 let itemsMarcadosDetalleCache = new Map();
+let itemsMarcadosPorPedidoCache = new Map();
 const CARGA_LOCAL_STATE_KEY = 'sabrofood_carga_estado';
+const CARGA_MARCADOS_PAGE_SIZE = 1000;
 
-function cargarEstadoLocalCarga() {
+function limpiarEstadoLocalCargaLegacy() {
   try {
-    return JSON.parse(localStorage.getItem(CARGA_LOCAL_STATE_KEY) || '{}');
+    localStorage.removeItem(CARGA_LOCAL_STATE_KEY);
   } catch (error) {
-    console.error('Error al cargar estado local de carga:', error);
-    return {};
+    console.error('Error al limpiar estado local legado de carga:', error);
   }
-}
-
-function guardarEstadoLocalCarga(estado) {
-  try {
-    localStorage.setItem(CARGA_LOCAL_STATE_KEY, JSON.stringify(estado));
-  } catch (error) {
-    console.error('Error al guardar estado local de carga:', error);
-  }
-}
-
-function aplicarOverridesLocalesCarga(itemsMarcados) {
-  const estadoLocal = cargarEstadoLocalCarga();
-
-  Object.entries(estadoLocal).forEach(([checkboxId, marcado]) => {
-    if (marcado) {
-      itemsMarcados.add(checkboxId);
-    } else {
-      itemsMarcados.delete(checkboxId);
-    }
-  });
-
-  return itemsMarcados;
 }
 
 /**
@@ -5086,31 +4871,51 @@ function aplicarOverridesLocalesCarga(itemsMarcados) {
 async function cargarItemsMarcados() {
   try {
     console.log('📥 Cargando items marcados desde Supabase...');
-    const cacheLocal = aplicarOverridesLocalesCarga(new Set());
+    limpiarEstadoLocalCargaLegacy();
     const client = getSupabaseClient();
     if (!client) {
       console.error('❌ Cliente Supabase no disponible para cargar items');
-      itemsMarcadosCache = cacheLocal;
       return itemsMarcadosCache;
     }
     
-    const { data, error } = await client
-      .from('carga_marcados')
-      .select('checkbox_id, marcado, updated_at, pedido_id, producto_id, cantidad, nombre_producto')
-      .eq('marcado', true);
-    
-    if (error) {
-      console.error('❌ Error al cargar items marcados:', error);
-      console.error('Detalles del error:', JSON.stringify(error, null, 2));
-      itemsMarcadosCache = cacheLocal;
-      return itemsMarcadosCache;
+    const data = [];
+    let desde = 0;
+
+    while (true) {
+      const { data: lote, error } = await client
+        .from('carga_marcados')
+        .select('checkbox_id, marcado, updated_at, pedido_id, producto_id, cantidad, nombre_producto')
+        .eq('marcado', true)
+        .order('updated_at', { ascending: false })
+        .range(desde, desde + CARGA_MARCADOS_PAGE_SIZE - 1);
+
+      if (error) {
+        console.error('❌ Error al cargar items marcados:', error);
+        console.error('Detalles del error:', JSON.stringify(error, null, 2));
+        return itemsMarcadosCache;
+      }
+
+      data.push(...(lote || []));
+
+      if (!lote || lote.length < CARGA_MARCADOS_PAGE_SIZE) {
+        break;
+      }
+
+      desde += CARGA_MARCADOS_PAGE_SIZE;
     }
     
-    itemsMarcadosCache = aplicarOverridesLocalesCarga(new Set(data.map(item => item.checkbox_id)));
+    itemsMarcadosCache = new Set(data.map(item => item.checkbox_id));
     itemsMarcadosDetalleCache = new Map();
+    itemsMarcadosPorPedidoCache = new Map();
     data.forEach((item) => {
       const compatKey = crearClaveCompatibilidadCarga(item.pedido_id, item);
       itemsMarcadosDetalleCache.set(compatKey, item.checkbox_id);
+      const pedidoCacheKey = normalizarPedidoId(item.pedido_id || '');
+      if (pedidoCacheKey) {
+        const listaPedido = itemsMarcadosPorPedidoCache.get(pedidoCacheKey) || [];
+        listaPedido.push(item);
+        itemsMarcadosPorPedidoCache.set(pedidoCacheKey, listaPedido);
+      }
     });
     console.log(`✅ Cargados ${itemsMarcadosCache.size} items marcados:`, Array.from(itemsMarcadosCache));
     return itemsMarcadosCache;
@@ -5126,16 +4931,54 @@ async function cargarItemsMarcados() {
  */
 async function agregarItemMarcado(checkboxId, itemInfo = null) {
   try {
-    itemsMarcadosCache.add(checkboxId);
-    const estadoLocal = cargarEstadoLocalCarga();
-    estadoLocal[checkboxId] = true;
-    guardarEstadoLocalCarga(estadoLocal);
+    limpiarEstadoLocalCargaLegacy();
+
+    if (itemInfo) {
+      const resultadoRpc = await procesarCambioCargaAtomico(checkboxId, itemInfo, true);
+      if (resultadoRpc) {
+        itemsMarcadosCache.add(checkboxId);
+        const compatKey = crearClaveCompatibilidadCarga(itemInfo.pedidoId, {
+          producto_id: itemInfo.productoId,
+          cantidad: itemInfo.cantidad,
+          nombre_producto: itemInfo.nombre
+        });
+        itemsMarcadosDetalleCache.set(compatKey, checkboxId);
+        return;
+      }
+    }
 
     const client = getSupabaseClient();
     if (!client) {
       console.error('❌ Cliente Supabase no disponible');
+      throw new Error('Cliente Supabase no disponible');
+    }
+
+    const { data: existente, error: errorExistente } = await client
+      .from('carga_marcados')
+      .select('checkbox_id, marcado, pedido_id, producto_id, cantidad, nombre_producto')
+      .eq('checkbox_id', checkboxId)
+      .maybeSingle();
+
+    if (errorExistente) {
+      console.error('Error al verificar item marcado existente:', errorExistente);
+      throw errorExistente;
+    }
+
+    if (existente?.marcado) {
+      itemsMarcadosCache.add(checkboxId);
+      if (itemInfo) {
+        const compatKey = crearClaveCompatibilidadCarga(itemInfo.pedidoId, {
+          producto_id: itemInfo.productoId,
+          cantidad: itemInfo.cantidad,
+          nombre_producto: itemInfo.nombre
+        });
+        itemsMarcadosDetalleCache.set(compatKey, checkboxId);
+      }
+      console.log('ℹ️ Item ya estaba marcado en Supabase, no se vuelve a descontar stock');
       return;
     }
+
+    itemsMarcadosCache.add(checkboxId);
 
     const insertData = {
       checkbox_id: checkboxId,
@@ -5152,19 +4995,42 @@ async function agregarItemMarcado(checkboxId, itemInfo = null) {
       itemsMarcadosDetalleCache.set(compatKey, checkboxId);
     }
 
-    const { error } = await client
-      .from('carga_marcados')
-      .upsert(insertData, {
-        onConflict: 'checkbox_id'
-      });
+    let error = null;
+
+    if (existente) {
+      ({ error } = await client
+        .from('carga_marcados')
+        .update({
+          marcado: true,
+          updated_at: insertData.updated_at,
+          pedido_id: insertData.pedido_id,
+          producto_id: insertData.producto_id,
+          cantidad: insertData.cantidad,
+          nombre_producto: insertData.nombre_producto
+        })
+        .eq('checkbox_id', checkboxId));
+    } else {
+      ({ error } = await client
+        .from('carga_marcados')
+        .insert(insertData));
+    }
 
     if (error) {
       console.error('Error al marcar item:', error);
-      console.warn('⚠️ El item quedó guardado solo en este dispositivo');
-      return;
+      itemsMarcadosCache.delete(checkboxId);
+      throw error;
     }
 
     console.log('✅ Item guardado en carga_marcados exitosamente');
+
+    if (itemInfo) {
+      const compatKey = crearClaveCompatibilidadCarga(itemInfo.pedidoId, {
+        producto_id: itemInfo.productoId,
+        cantidad: itemInfo.cantidad,
+        nombre_producto: itemInfo.nombre
+      });
+      itemsMarcadosDetalleCache.set(compatKey, checkboxId);
+    }
 
     if (itemInfo && itemInfo.productoId) {
       console.log('⏳ Intentando descontar stock...');
@@ -5251,20 +5117,35 @@ async function descontarStockItem(itemInfo) {
 
 async function devolverStockItem(checkboxId) {
   try {
-    const client = getSupabaseClient();
-    if (!client) {
-      console.error('❌ Cliente no disponible para devolver stock item');
+    const data = typeof checkboxId === 'string'
+      ? await (async () => {
+          const client = getSupabaseClient();
+          if (!client) {
+            throw new Error('Cliente no disponible para devolver stock item');
+          }
+
+          const { data: itemData, error } = await client
+            .from('carga_marcados')
+            .select('pedido_id, producto_id, cantidad, nombre_producto')
+            .eq('checkbox_id', checkboxId)
+            .single();
+
+          if (error) {
+            throw error;
+          }
+
+          return itemData;
+        })()
+      : checkboxId;
+
+    if (!data || !data.producto_id) {
+      console.log('⚠️ Item no tiene producto_id, no se devuelve stock');
       return;
     }
 
-    const { data, error } = await client
-      .from('carga_marcados')
-      .select('pedido_id, producto_id, cantidad, nombre_producto')
-      .eq('checkbox_id', checkboxId)
-      .single();
-
-    if (error || !data || !data.producto_id) {
-      console.log('⚠️ Item no tiene producto_id, no se devuelve stock');
+    const client = getSupabaseClient();
+    if (!client) {
+      console.error('❌ Cliente no disponible para devolver stock item');
       return;
     }
 
@@ -5319,7 +5200,8 @@ async function devolverStockItemsMarcados(pedidoId, pedido = null) {
     const { data: itemsMarcados, error } = await client
       .from('carga_marcados')
       .select('checkbox_id, producto_id, cantidad, nombre_producto')
-      .eq('pedido_id', pedidoId);
+      .eq('pedido_id', pedidoId)
+      .eq('marcado', true);
 
     if (error) {
       console.error('❌ Error consultando items marcados:', error);
@@ -5331,9 +5213,11 @@ async function devolverStockItemsMarcados(pedidoId, pedido = null) {
       return;
     }
 
+    console.log(`📦 Encontrados ${itemsMarcados.length} items marcados - Devolviendo stock...`);
     let itemsDevueltos = 0;
     for (const item of itemsMarcados) {
       if (!item.producto_id) {
+        console.log(`⚠️ Item "${item.nombre_producto}" sin producto_id - omitiendo`);
         continue;
       }
 
@@ -5368,6 +5252,7 @@ async function devolverStockItemsMarcados(pedidoId, pedido = null) {
           .eq('tipo', 'SALIDA')
           .eq('cantidad', item.cantidad);
 
+        console.log(`  ✅ ${item.nombre_producto}: ${stockAnterior} → ${nuevoStock} (+${item.cantidad})`);
         itemsDevueltos++;
       } catch (itemError) {
         console.error('❌ Error procesando item:', itemError);
@@ -5383,7 +5268,7 @@ async function devolverStockItemsMarcados(pedidoId, pedido = null) {
       console.error('❌ Error eliminando items de carga_marcados:', errorDelete);
     }
 
-    console.log(`✅ Stock devuelto exitosamente: ${itemsDevueltos} items procesados`);
+    console.log(`✅ Stock devuelto exitosamente: ${itemsDevueltos} de ${itemsMarcados.length} items procesados`);
   } catch (error) {
     console.error('❌ Error en devolverStockItemsMarcados:', error);
   }
@@ -5395,35 +5280,89 @@ async function devolverStockItemsMarcados(pedidoId, pedido = null) {
  */
 async function eliminarItemMarcado(checkboxId) {
   try {
-    try {
-      await devolverStockItem(checkboxId);
-    } catch (stockError) {
-      console.warn('⚠️ Error devolviendo stock, pero continuando con desmarcado:', stockError);
-    }
+    limpiarEstadoLocalCargaLegacy();
 
-    itemsMarcadosCache.delete(checkboxId);
-    const estadoLocal = cargarEstadoLocalCarga();
-    estadoLocal[checkboxId] = false;
-    guardarEstadoLocalCarga(estadoLocal);
-    
     const client = getSupabaseClient();
     if (!client) {
       console.error('❌ Cliente Supabase no disponible');
-      return;
+      throw new Error('Cliente Supabase no disponible');
     }
-    
-    const { error } = await client
+
+    const { data: existenteRpc, error: errorExistenteRpc } = await client
       .from('carga_marcados')
-      .delete()
+      .select('checkbox_id, pedido_id, producto_id, cantidad, nombre_producto')
       .eq('checkbox_id', checkboxId);
-    
-    if (error) {
-      console.error('❌ Error al eliminar de carga_marcados:', error);
-      console.warn('⚠️ El desmarcado quedó aplicado solo en este dispositivo');
+
+    if (errorExistenteRpc) {
+      console.error('❌ Error consultando item para RPC de carga:', errorExistenteRpc);
+      throw errorExistenteRpc;
+    }
+
+    const itemRpc = Array.isArray(existenteRpc) ? (existenteRpc[0] || null) : existenteRpc;
+
+    if (itemRpc) {
+      const resultadoRpc = await procesarCambioCargaAtomico(checkboxId, {
+        pedidoId: itemRpc.pedido_id,
+        productoId: itemRpc.producto_id,
+        cantidad: itemRpc.cantidad,
+        nombre: itemRpc.nombre_producto
+      }, false);
+
+      if (resultadoRpc) {
+        itemsMarcadosCache.delete(checkboxId);
+        if (itemRpc?.pedido_id) {
+          const compatKey = crearClaveCompatibilidadCarga(itemRpc.pedido_id, itemRpc);
+          itemsMarcadosDetalleCache.delete(compatKey);
+        }
+        return;
+      }
+    }
+
+    const { data: existente, error: errorExistente } = await client
+      .from('carga_marcados')
+      .select('checkbox_id, pedido_id, producto_id, cantidad, nombre_producto')
+      .eq('checkbox_id', checkboxId)
+      .maybeSingle();
+
+    if (errorExistente) {
+      console.error('❌ Error consultando item a desmarcar:', errorExistente);
+      throw errorExistente;
+    }
+
+    if (!existente) {
+      itemsMarcadosCache.delete(checkboxId);
+      console.log('ℹ️ El item ya no existía en carga_marcados');
       return;
     }
 
-    console.log('✅ Item desmarcado exitosamente');
+    const { data: itemDesmarcado, error: errorUpdate } = await client
+      .from('carga_marcados')
+      .update({
+        marcado: false,
+        updated_at: new Date().toISOString()
+      })
+      .eq('checkbox_id', checkboxId)
+      .eq('marcado', true)
+      .select('checkbox_id, pedido_id, producto_id, cantidad, nombre_producto')
+      .maybeSingle();
+
+    if (errorUpdate) {
+      console.error('❌ Error al desmarcar item:', errorUpdate);
+      throw errorUpdate;
+    }
+
+    if (!itemDesmarcado) {
+      itemsMarcadosCache.delete(checkboxId);
+      if (existente?.pedido_id) {
+        const compatKey = crearClaveCompatibilidadCarga(existente.pedido_id, existente);
+        itemsMarcadosDetalleCache.delete(compatKey);
+      }
+      return;
+    }
+
+    itemsMarcadosCache.delete(checkboxId);
+    itemsMarcadosDetalleCache.delete(crearClaveCompatibilidadCarga(itemDesmarcado.pedido_id, itemDesmarcado));
+    await devolverStockItem(itemDesmarcado);
   } catch (e) {
     console.error('❌ Error CRÍTICO al desmarcar item:', e);
     itemsMarcadosCache.add(checkboxId);
@@ -5438,7 +5377,8 @@ async function limpiarItemsMarcados() {
   try {
     itemsMarcadosCache.clear();
     itemsMarcadosDetalleCache.clear();
-    guardarEstadoLocalCarga({});
+    itemsMarcadosPorPedidoCache.clear();
+    limpiarEstadoLocalCargaLegacy();
 
     const client = getSupabaseClient();
     if (!client) {
@@ -5592,7 +5532,23 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // SELECTOR DE CHOFER: Recargar pedidos cuando se seleccione un repartidor
   const selectorChofer = document.getElementById('selectorChofer');
+  const btnVerCarga = document.querySelector('a.btn-ver-carga[href*="ver-carga"]');
   console.log('🔍 Selector de chofer encontrado:', selectorChofer ? 'SÍ' : 'NO');
+
+  const actualizarEnlaceVerCarga = (perfil) => {
+    if (!btnVerCarga) {
+      return;
+    }
+
+    const url = new URL(btnVerCarga.getAttribute('href') || './ver-carga.html', window.location.href);
+    url.searchParams.delete('perfil');
+
+    if (perfil) {
+      url.searchParams.set('perfil', perfil);
+    }
+
+    btnVerCarga.href = `${url.pathname.split('/').pop()}${url.search}`;
+  };
   
   if (selectorChofer) {
     // Recuperar perfil guardado de localStorage
@@ -5601,6 +5557,7 @@ document.addEventListener('DOMContentLoaded', () => {
       selectorChofer.value = perfilGuardado;
       console.log('✅ Perfil recuperado de localStorage:', perfilGuardado);
     }
+    actualizarEnlaceVerCarga(selectorChofer.value);
     
     console.log('✅ Agregando listener al selector de chofer');
     selectorChofer.addEventListener('change', function() {
@@ -5615,6 +5572,8 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.removeItem('repartidor_perfil');
         console.log('🗑️ Perfil eliminado de localStorage');
       }
+
+      actualizarEnlaceVerCarga(this.value);
       
       cargarPedidos(); // Recargar con el nuevo filtro
     });

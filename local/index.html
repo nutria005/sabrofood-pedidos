@@ -45,9 +45,9 @@
           <span id="contadorTotal">📦 0</span>
         </div>
         
-        <button id="btnVerCarga" class="btn-ver-carga" aria-label="Ver resumen de carga" style="background:rgba(255,255,255,0.95);color:#667eea;font-weight:600;border:none;box-shadow:0 2px 8px rgba(0,0,0,0.15);">
+        <a href="./ver-carga.html" class="btn-ver-carga" aria-label="Abrir manifiesto de carga" style="background:rgba(255,255,255,0.95);color:#667eea;font-weight:600;border:none;box-shadow:0 2px 8px rgba(0,0,0,0.15);text-decoration:none;display:inline-flex;align-items:center;justify-content:center;">
           📦 Ver Carga
-        </button>
+        </a>
         
         <a href="./historial.html" class="btn-ver-carga" aria-label="Abrir historial completo" style="background:rgba(255,255,255,0.95);color:#764ba2;font-weight:600;border:none;box-shadow:0 2px 8px rgba(0,0,0,0.15);text-decoration:none;display:inline-flex;align-items:center;justify-content:center;">
           📊 Historial
@@ -253,6 +253,11 @@
           <div class="form-row">
             <label for="telefono" class="sr-only">Teléfono del cliente</label>
             <input id="telefono" type="tel" placeholder="📱 Teléfono (Obligatorio)" style="margin-bottom:8px;" required aria-required="true" />
+          </div>
+
+          <div class="form-row">
+            <label for="telefonoSecundario" class="sr-only">Segundo teléfono del cliente</label>
+            <input id="telefonoSecundario" type="tel" placeholder="📞 Segundo teléfono (opcional)" style="margin-bottom:8px;" />
           </div>
           
           <div class="form-row">
@@ -590,22 +595,6 @@
           </button>
         </div>
       </form>
-    </div>
-  </div>
-  
-  <div id="modalCarga" class="modal-carga-backdrop" style="display:none;" role="dialog" aria-hidden="true" aria-labelledby="modalCargaTitle">
-    <div class="modal-carga">
-      <div class="modal-carga-header">
-        <h3 id="modalCargaTitle">📦 Manifiesto de Carga</h3>
-        <button id="btnCerrarCarga" class="btn-cerrar-modal" aria-label="Cerrar resumen de carga">✕</button>
-      </div>
-      <div id="modalCargaBody" class="modal-carga-body"></div>
-      <div class="modal-carga-footer">
-        <div class="total-bultos">
-          <span class="total-bultos-label">Total Bultos:</span>
-          <span class="total-bultos-numero" id="totalBultos">0</span>
-        </div>
-      </div>
     </div>
   </div>
   

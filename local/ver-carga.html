@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Manifiesto de carga sincronizado para reparto">
+  <meta name="theme-color" content="#667eea">
+  <title>Manifiesto de Carga | Sabrofood Reparto</title>
+  <link rel="manifest" href="../manifest.json">
+  <link rel="stylesheet" href="style.css?v=20251221">
+  <link rel="stylesheet" href="ver-carga.css?v=2026051701">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../shared/supabase-config.js?v=20251217"></script>
+  <script src="../shared/roles-config.js"></script>
+  <script src="../shared/auth.js?v=20251217"></script>
+  <script src="../shared/route-protection.js"></script>
+  <script>
+    verificarAutenticacionYRedirigir('/repatosabrofood/index.html');
+  </script>
+  <script src="ver-carga.js?v=2026051701" defer></script>
+</head>
+<body class="carga-page-body">
+  <div class="carga-page-shell">
+    <div class="carga-page-topbar">
+      <a href="./index.html" class="carga-topbar-link">← Volver a Reparto</a>
+      <div class="carga-topbar-actions">
+        <button id="btnRecargarCarga" class="carga-topbar-btn" type="button">Actualizar</button>
+        <button id="btnCerrarSesionCarga" class="carga-topbar-btn danger" type="button">Salir</button>
+      </div>
+    </div>
+
+    <main class="carga-page-main modal-carga-expanded">
+      <section class="modal-carga-page">
+        <div class="modal-carga-header carga-page-modal-header">
+          <div>
+            <h1 id="modalCargaTitle">📦 Manifiesto de Carga</h1>
+          </div>
+        </div>
+
+        <div class="modal-carga-toolbar-page">
+          <div class="carga-toolbar-row principal">
+            <input type="search" id="buscarCarga" placeholder="Buscar por cliente, telefono, pedido o producto" aria-label="Buscar en manifiesto de carga">
+            <div class="carga-quick-filters" role="group" aria-label="Filtros rapidos por fecha">
+              <button type="button" class="carga-quick-filter is-active" data-date-filter="hoy">Hoy</button>
+              <button type="button" class="carga-quick-filter" data-date-filter="manana">Mañana</button>
+            </div>
+          </div>
+
+          <div class="carga-toolbar-row secundaria">
+            <select id="filtroEstadoCarga" aria-label="Filtrar por estado de marcacion">
+              <option value="todos">Todos</option>
+              <option value="pendientes">Solo pendientes</option>
+              <option value="marcados">Solo marcados</option>
+            </select>
+
+            <button id="btnLimpiarFiltrosCarga" class="carga-page-btn muted" type="button">Limpiar filtros</button>
+          </div>
+
+          <div class="carga-inline-status" aria-live="polite">
+            <span id="cargaResultadosTexto">Cargando manifiesto...</span>
+            <span id="cargaSyncTexto">Sincronizando...</span>
+          </div>
+        </div>
+
+        <div class="carga-resumen-compacto">
+          <div class="carga-metricas-grid">
+            <article class="carga-metrica-card total">
+              <span>Total Bultos</span>
+              <strong id="statTotalBultos">0</strong>
+            </article>
+            <article class="carga-metrica-card pedidos">
+              <span>Pedidos Activos</span>
+              <strong id="statPedidosActivos">0</strong>
+            </article>
+          </div>
+
+          <div class="carga-priority-strip compacta">
+            <div class="carga-priority-pill prioridad-a"><span>Ruta A</span><strong id="resumenRutaA">0</strong></div>
+            <div class="carga-priority-pill prioridad-b"><span>Ruta B</span><strong id="resumenRutaB">0</strong></div>
+            <div class="carga-priority-pill prioridad-c"><span>Ruta C</span><strong id="resumenRutaC">0</strong></div>
+          </div>
+
+          <div id="cargaResumenPreparacion" hidden></div>
+        </div>
+
+        <div class="carga-page-body-wrap">
+          <div id="cargaLoadingState" class="carga-loading-state">Cargando manifiesto...</div>
+          <div id="cargaEmptyState" class="carga-empty-state" hidden>No hay productos para mostrar con los filtros actuales.</div>
+          <div id="cargaContenido" class="carga-sections" hidden></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

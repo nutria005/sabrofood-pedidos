@@ -22,7 +22,6 @@
   --t-line-height: 1.5;
 }
 
-/* === BASE === */
 html {
   height: 100%;
 }
@@ -42,168 +41,6 @@ body {
   box-sizing: border-box;
 }
 
-/* === SISTEMA DE ALERTAS === */
-.alert {
-  position: relative;
-  padding: 12px 16px;
-  margin-bottom: 8px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  line-height: 1.4;
-  animation: slideInAlert 0.3s ease-out;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.alert-error {
-  background: #fee2e2;
-  color: #991b1b;
-  border-left: 4px solid #dc2626;
-}
-
-.alert-success {
-  background: #d1fae5;
-  color: #065f46;
-  border-left: 4px solid #059669;
-}
-
-.alert-warning {
-  background: #fef3c7;
-  color: #92400e;
-  border-left: 4px solid #f59e0b;
-}
-
-.alert-info {
-  background: #dbeafe;
-  color: #1e40af;
-  border-left: 4px solid #3b82f6;
-}
-
-.alert-icon {
-  font-size: 16px;
-  flex-shrink: 0;
-}
-
-.alert-message {
-  flex: 1;
-  white-space: pre-line;
-}
-
-.alert-close {
-  background: transparent;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: bold;
-  opacity: 0.7;
-  transition: opacity 0.2s;
-}
-
-.alert-close:hover {
-  opacity: 1;
-  background: rgba(0, 0, 0, 0.1);
-}
-
-@keyframes slideInAlert {
-  from {
-    opacity: 0;
-    transform: translateX(100%);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-/* === CONEXIÃ“N Y MODO OFFLINE === */
-.connection-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 600;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-}
-
-/* BotÃ³n Ver Carga */
-.btn-ver-carga {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
-}
-
-.btn-ver-carga:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.6);
-}
-
-.btn-ver-carga:active {
-  transform: translateY(0);
-}
-
-/* Contador de Pedidos Badge */
-.contador-pedidos-badge {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 12px 20px;
-  border-radius: 12px;
-  margin-bottom: 16px;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-  animation: fadeInBadge 0.5s ease-out;
-}
-
-.contador-pedidos-badge .badge-icon {
-  font-size: 24px;
-}
-
-.contador-pedidos-badge .badge-label {
-  font-size: 14px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.contador-pedidos-badge .badge-numero {
-  font-size: 28px;
-  font-weight: 800;
-  background: white;
-  color: #667eea;
-  padding: 4px 16px;
-  border-radius: 8px;
-  min-width: 60px;
-  text-align: center;
-}
-
-@keyframes fadeInBadge {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Formulario Plegable (Accordion) */
 .form-accordion {
   margin-top: 0;
 }
@@ -338,202 +175,6 @@ body {
   transform: scale(1.1);
 }
 
-.modal-carga-body {
-  padding: 24px;
-  overflow-y: auto;
-  flex: 1;
-  contain: layout style paint;
-  will-change: scroll-position;
-  -webkit-overflow-scrolling: touch;
-}
-
-.item-carga {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
-  background: #f9fafb;
-  border-radius: 10px;
-  margin-bottom: 12px;
-  border-left: 4px solid #667eea;
-  will-change: auto;
-}
-
-.item-carga:hover {
-  background: #f3f4f6;
-}
-
-.item-carga.checked {
-  opacity: 0.5;
-  background: #e5e7eb;
-  border-left-color: #9ca3af;
-}
-
-.item-carga.checked .item-texto {
-  text-decoration: line-through;
-  color: #6b7280;
-}
-
-.checkbox-carga {
-  width: 28px;
-  height: 28px;
-  cursor: pointer;
-  flex-shrink: 0;
-  accent-color: #667eea;
-}
-
-.item-texto {
-  flex: 1;
-  font-size: 1rem;
-  font-weight: 500;
-  color: #1f2937;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-/* Producto destacado (grande) */
-.item-producto-nombre {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: #111827;
-  line-height: 1.3;
-}
-
-/* Cliente secundario (pequeÃ±o, debajo) */
-.item-cliente-nombre {
-  font-size: 0.85rem;
-  font-weight: 400;
-  color: #6b7280;
-  font-style: italic;
-}
-
-.item-cantidad {
-  background: #667eea;
-  color: white;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-weight: 700;
-  font-size: 0.95rem;
-  min-width: 50px;
-  text-align: center;
-}
-
-.modal-carga-footer {
-  padding: 20px 24px;
-  border-top: 2px solid #e5e7eb;
-  background: #f9fafb;
-  border-radius: 0 0 16px 16px;
-}
-
-.total-bultos {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  font-size: 1.5rem;
-  font-weight: 700;
-}
-
-.total-bultos-label {
-  color: #374151;
-}
-
-.total-bultos-numero {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 8px 24px;
-  border-radius: 10px;
-  min-width: 80px;
-  text-align: center;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
-
-.mensaje-vacio-carga {
-  text-align: center;
-  padding: 40px 20px;
-  color: #6b7280;
-  font-size: 1.1rem;
-}
-
-/* Secciones de Prioridad en el Modal de Carga */
-.seccion-prioridad {
-  margin-bottom: 24px;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  contain: layout style;
-}
-
-.seccion-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
-  font-weight: 700;
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.3);
-}
-
-.seccion-prioridad-a .seccion-header {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-  color: white;
-}
-
-.seccion-prioridad-b .seccion-header {
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-  color: white;
-}
-
-.seccion-prioridad-c .seccion-header {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: white;
-}
-
-.seccion-icono {
-  font-size: 20px;
-}
-
-.seccion-titulo {
-  flex: 1;
-}
-
-.seccion-badge {
-  background: rgba(255, 255, 255, 0.25);
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.seccion-items {
-  padding: 12px;
-  background: #f9fafb;
-  contain: layout style;
-}
-
-.seccion-prioridad-a .item-carga {
-  border-left-color: #ef4444;
-}
-
-.seccion-prioridad-b .item-carga {
-  border-left-color: #f59e0b;
-}
-
-.seccion-prioridad-c .item-carga {
-  border-left-color: #10b981;
-}
-
-/* Ajustes para items dentro de secciones */
-.seccion-items .item-carga {
-  margin-bottom: 8px;
-}
-
-.seccion-items .item-carga:last-child {
-  margin-bottom: 0;
-}
 
 .connection-status.online {
   background: #d1fae5;
@@ -1413,6 +1054,32 @@ border: 1px solid #e5e7eb !important;
 .ghost:hover {
 background: #f3f4f6 !important;
 border-color: #d1d5db !important;
+}
+
+.btn-ver-carga {
+background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+color: white;
+border: none;
+padding: 8px 16px;
+border-radius: 8px;
+font-size: 13px;
+font-weight: 600;
+cursor: pointer;
+transition: all 0.3s ease;
+box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+text-decoration: none;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+}
+
+.btn-ver-carga:hover {
+transform: translateY(-2px);
+box-shadow: 0 4px 12px rgba(102, 126, 234, 0.6);
+}
+
+.btn-ver-carga:active {
+transform: translateY(0);
 }
 
 /* Estado de carga para botones */
@@ -3917,7 +3584,7 @@ input[type="number"] {
 }
 
 /* ========================================
-   SECCIÓN DE PEDIDOS ENTREGADOS
+   SECCIï¿½N DE PEDIDOS ENTREGADOS
    ======================================== */
 .results-entregados .card-order {
   opacity: var(--entregado-opacity);
@@ -3946,7 +3613,7 @@ input[type="number"] {
 }
 
 /* ========================================
-   MODAL DE CONFIRMACIÓN DE ENTREGA
+   MODAL DE CONFIRMACIï¿½N DE ENTREGA
    ======================================== */
 .modal-confirmacion-backdrop {
   position: fixed;

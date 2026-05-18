@@ -49,9 +49,9 @@
           <span id="contadorTotal" style="color:#374151;">📦 0</span>
         </div>
         
-        <button id="btnVerCarga" class="btn-ver-carga" aria-label="Ver resumen de carga">
+        <a href="./ver-carga.html" class="btn-ver-carga" aria-label="Abrir manifiesto de carga">
           📦 Ver Carga
-        </button>
+        </a>
         
         <div id="connectionStatus" class="connection-status online" role="status" aria-live="polite">
           <span class="status-icon" aria-hidden="true">🟢</span>
@@ -210,6 +210,11 @@
             <label for="telefono" class="sr-only">Teléfono del cliente</label>
             <input id="telefono" type="tel" placeholder="📱 Teléfono (Obligatorio)" style="margin-bottom:8px;" required aria-required="true" />
           </div>
+
+          <div class="form-row">
+            <label for="telefonoSecundario" class="sr-only">Segundo teléfono del cliente</label>
+            <input id="telefonoSecundario" type="tel" placeholder="📞 Segundo teléfono (opcional)" style="margin-bottom:8px;" />
+          </div>
           
           <div class="form-row">
             <label for="nombre" class="sr-only">Nombre del cliente</label>
@@ -311,22 +316,6 @@
     </div>
   </div>
   
-  <div id="modalCarga" class="modal-carga-backdrop" style="display:none;" role="dialog" aria-hidden="true" aria-labelledby="modalCargaTitle">
-    <div class="modal-carga">
-      <div class="modal-carga-header">
-        <h3 id="modalCargaTitle">📦 Manifiesto de Carga</h3>
-        <button id="btnCerrarCarga" class="btn-cerrar-modal" aria-label="Cerrar resumen de carga">✕</button>
-      </div>
-      <div id="modalCargaBody" class="modal-carga-body"></div>
-      <div class="modal-carga-footer">
-        <div class="total-bultos">
-          <span class="total-bultos-label">Total Bultos:</span>
-          <span class="total-bultos-numero" id="totalBultos">0</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <style>
     .sr-only {
       position: absolute;
