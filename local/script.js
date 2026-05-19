@@ -3353,6 +3353,27 @@ let catalogoGranel = []; // Productos a granel
 let productoSeleccionado = null; // Producto de catálogo seleccionado
 let productoGranelSeleccionado = null; // Producto granel seleccionado
 
+async function cargarProductosCatalogoPaginados(construirQuery, pageSize = 1000) {
+  const registros = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await construirQuery(offset, pageSize);
+    if (error) throw error;
+
+    const lote = data || [];
+    registros.push(...lote);
+
+    if (lote.length < pageSize) {
+      break;
+    }
+
+    offset += pageSize;
+  }
+
+  return registros;
+}
+
 /**
  * Cargar catálogo de productos desde Supabase
  * Excluye productos de tipo "granel" para mostrar solo productos empacados (sacos)
@@ -3363,18 +3384,20 @@ async function cargarCatalogoProductos(mostrarMensaje = false) {
       console.log('🔄 Recargando catálogo de productos...');
     }
     
-    const { data, error } = await supabase_client
-      .from('productos')
-      .select('id, nombre, categoria, marca, stock, stock_minimo_sacos, precio, tipo')
-      .neq('tipo', 'granel') // Excluir productos a granel
-      .order('nombre', { ascending: true });
-    
-    if (error) throw error;
+    const data = await cargarProductosCatalogoPaginados((offset, pageSize) => {
+      return supabase_client
+        .from('productos')
+        .select('id, nombre, categoria, marca, stock, stock_minimo_sacos, precio, tipo')
+        .order('nombre', { ascending: true })
+        .range(offset, offset + pageSize - 1);
+    });
     
     // Filtrar también por nombre (por si acaso no tienen el campo tipo)
-    productosDisponibles = (data || []).filter(p => 
-      !p.nombre.toLowerCase().includes('(granel)')
-    );
+    productosDisponibles = (data || []).filter(p => {
+      const nombre = String(p?.nombre || '').toLowerCase();
+      const tipo = String(p?.tipo || '').toLowerCase();
+      return tipo !== 'granel' && !nombre.includes('(granel)');
+    });
     
     // Actualizar timestamp
     ultimaActualizacionCatalogo = new Date();
@@ -3409,13 +3432,14 @@ async function cargarCatalogoGranel(mostrarMensaje = false) {
       console.log('🔄 Recargando catálogo de productos a granel...');
     }
     
-    const { data, error } = await supabase_client
-      .from('productos')
-      .select('id, nombre, categoria, marca, stock, stock_minimo_sacos, precio, tipo')
-      .eq('tipo', 'granel') // SOLO productos a granel
-      .order('nombre', { ascending: true });
-    
-    if (error) throw error;
+    const data = await cargarProductosCatalogoPaginados((offset, pageSize) => {
+      return supabase_client
+        .from('productos')
+        .select('id, nombre, categoria, marca, stock, stock_minimo_sacos, precio, tipo')
+        .eq('tipo', 'granel')
+        .order('nombre', { ascending: true })
+        .range(offset, offset + pageSize - 1);
+    });
     
     catalogoGranel = data || [];
     
@@ -3714,7 +3738,7 @@ function filtrarProductosGranel(query) {
   }
   
   // Renderizar tarjetas de resultados
-  resultsContainer.innerHTML = resultados.slice(0, 10).map(p => {
+  resultsContainer.innerHTML = resultados.map(p => {
     const stock = Math.floor(p.stock || 0);
     const stockMinimo = p.stock_minimo_sacos || 0;
     
