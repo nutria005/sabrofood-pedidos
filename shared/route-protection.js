@@ -30,7 +30,7 @@ async function esperarSupabase(maxWaitMs = 5000) {
  * Verifica autenticación y redirige si no está autenticado
  * @param {string} redirectUrl - URL a donde redirigir si no autenticado
  */
-async function verificarAutenticacionYRedirigir(redirectUrl = '/repatosabrofood/index.html') {
+async function verificarAutenticacionYRedirigir(redirectUrl = '../index.html') {
   try {
     // Esperar a que Supabase se cargue (máximo 5 segundos)
     const supabaseDisponible = await esperarSupabase(5000);

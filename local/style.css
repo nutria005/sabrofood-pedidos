@@ -1371,7 +1371,7 @@ to { transform: scale(.95); opacity: 0; }
     align-items: flex-start;
     gap: 4px;
   }
-  .form-row[style*="grid-template-columns"] {
+  .form-row--cantidad {
     grid-template-columns: 1fr 1fr;
     grid-template-rows: auto auto;
   }
@@ -1727,7 +1727,7 @@ header {
 }
 
 /* Grid de productos más simple en móvil */
-.form-row[style*="grid-template-columns"] {
+.form-row--cantidad {
   display: flex !important;
   flex-direction: column !important;
   gap: 8px !important;
@@ -4795,4 +4795,951 @@ input[type="number"] {
   #contadorProgreso {
     font-size: 0.75rem !important;
   }
+}
+
+/* ============================================================
+   TARJETAS DE PEDIDOS v2 — Lenguaje visual de historial.css
+   Lista vertical de 1 columna, acciones visibles sin menú ⚙️
+   ============================================================ */
+
+/* Títulos de sección por categoría de estado */
+.categoria-titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #374151;
+  background: linear-gradient(135deg, #f9fafb, #f3f4f6);
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 8px 14px;
+  margin: 18px 0 10px;
+  letter-spacing: -0.01em;
+}
+.categoria-titulo::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e5e7eb;
+}
+
+.order-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid #10b981;
+  border-radius: 18px;
+  padding: 16px 18px;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.order-card:hover {
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.10);
+  transform: translateY(-1px);
+}
+
+/* Estados de pago */
+.order-card--por-cobrar {
+  border-left-color: #f59e0b;
+  background: linear-gradient(135deg, #fffdf5 0%, #fffaf0 100%);
+}
+.order-card--pagado {
+  border-left-color: #10b981;
+  opacity: 0.92;
+}
+.order-card--anulado {
+  border-left-color: #ef4444;
+  background: linear-gradient(135deg, #fef2f2 0%, #fdf0ef 100%);
+}
+.order-card--entregado {
+  border-left-color: #3b82f6;
+}
+
+/* Fila superior: precio, estado, badges */
+.order-card__top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.order-card__precio {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: -0.02em;
+}
+.order-card__estado {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.order-card__estado--cobrar {
+  background: #fef3c7;
+  color: #92400e;
+}
+.order-card__estado--pagado {
+  background: #d1fae5;
+  color: #065f46;
+}
+.badge-repartidor {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #fff;
+}
+.badge-repartidor--r1 {
+  background: #3b82f6;
+}
+.badge-repartidor--r2 {
+  background: #8b5cf6;
+}
+
+/* Badge de STRIKES (advertencia sutil en la tarjeta) */
+.order-card__strikes {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+.order-card__strikes--alerta {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+.order-card__strikes--baneado {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+}
+
+/* Nombre del cliente */
+.order-card__nombre {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 2px 0 6px;
+}
+
+/* Contacto: teléfonos + WhatsApp (un pill por número) */
+.order-card__contacto {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.contacto-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 4px 6px 4px 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.contacto-pill__numero {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #111827;
+  text-decoration: none;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.contacto-pill__numero:hover {
+  color: #047857;
+  text-decoration: underline;
+}
+.btn-wa {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #25D366;
+  color: #fff;
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-wa svg {
+  width: 18px;
+  height: 18px;
+  filter: brightness(0) invert(1);
+}
+.btn-wa:hover {
+  transform: scale(1.08);
+  box-shadow: 0 3px 8px rgba(37, 211, 102, 0.35);
+}
+
+/* Dirección destacada como botón (Waze + Google Maps) */
+.order-card__direccion {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  padding: 9px 12px;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.order-card__direccion:hover {
+  background: #dbeafe;
+  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.12);
+}
+
+/* Productos resumidos */
+.order-card__productos {
+  font-size: 0.88rem;
+  color: #6b7280;
+  line-height: 1.45;
+  margin-bottom: 6px;
+}
+
+/* Nota importante sin estilos inline */
+.nota-importante {
+  background: #fef3c7;
+  border-left: 3px solid #f59e0b;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #92400e;
+  margin-bottom: 8px;
+}
+
+/* Fila de ruta: prioridad + orden */
+.order-card__ruta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 0;
+  margin-bottom: 6px;
+  border-top: 1px dashed #e5e7eb;
+  border-bottom: 1px dashed #e5e7eb;
+}
+.order-card__ruta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.order-card__ruta-label {
+  font-size: 0.95rem;
+}
+.prioridad-select {
+  background: #ffffff;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.prioridad-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+.input-orden-entrega {
+  width: 54px;
+  height: 32px;
+  padding: 4px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: center;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  -webkit-appearance: none;
+  -moz-appearance: textfield;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.input-orden-entrega:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+/* Estado anulado / completado */
+.order-card__estado-anulado {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #dc2626;
+  background: #fee2e2;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.order-card__estado-completado {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #065f46;
+  background: #d1fae5;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+/* Acciones visibles (sin dropdown) */
+.order-card__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.order-card__acciones--secundarias {
+  margin-top: 4px;
+}
+
+.btn-accion {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-accion:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
+}
+.btn-accion:active {
+  transform: translateY(0);
+}
+.btn-accion--crecer {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+.btn-accion--primario {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #fff;
+}
+.btn-accion--desmarcar {
+  background: #e5e7eb;
+  color: #374151;
+  border-color: #d1d5db;
+}
+.btn-accion--outline {
+  background: #ffffff;
+  color: #6b7280;
+  border-color: #d1d5db;
+}
+.btn-accion--outline:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+.btn-accion--azul {
+  background: #ffffff;
+  color: #2563eb;
+  border-color: #93c5fd;
+}
+.btn-accion--azul:hover {
+  background: #eff6ff;
+}
+.btn-accion--neutro {
+  background: #ffffff;
+  color: #d97706;
+  border-color: #fcd34d;
+}
+.btn-accion--neutro:hover {
+  background: #fffbeb;
+}
+.btn-accion--peligro {
+  background: #ffffff;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+.btn-accion--peligro:hover {
+  background: #fef2f2;
+}
+.btn-accion--pago {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #fff;
+  width: 100%;
+  margin-top: 6px;
+  justify-content: center;
+}
+.btn-accion--pago-mixto {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: #fff;
+  width: 100%;
+  margin-top: 6px;
+  justify-content: center;
+}
+
+/* ============================================================
+   MODAL AGREGAR/EDITAR PEDIDO — Diseño limpio (sin inline styles)
+   ============================================================ */
+
+/* Backdrop + contenedor */
+#formModalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(30, 41, 59, 0.55);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+#formModal {
+  background: #ffffff;
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(30, 41, 59, 0.18);
+  max-width: 540px;
+  width: 100%;
+  padding: 32px 28px;
+  position: relative;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* Botón cerrar */
+#btnCloseForm {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  background: #f3f4f6;
+  color: #374151;
+  border: none;
+  border-radius: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  min-height: auto;
+  line-height: 1;
+}
+#btnCloseForm:hover {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+/* Inputs del formulario: tamaño legible */
+#formAgregar input,
+#formAgregar select,
+#formAgregar textarea {
+  font-size: 1.05rem;
+}
+#formAgregar .form-row > input,
+#formAgregar .form-row > select,
+#formAgregar .form-row > textarea {
+  margin-bottom: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Header historial preview */
+.historial-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Direcciones únicas */
+.direcciones-header-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1e40af;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.direcciones-header-sub {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+/* Fila "Asignar a Chofer" */
+.form-row--chofer {
+  margin-top: 12px;
+}
+.form-row--chofer .form-label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: #374151;
+}
+
+/* Selector de tipo de producto */
+.form-row--tipo-producto {
+  margin-bottom: 10px;
+}
+.radio-producto-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: #374151;
+  margin-bottom: 4px;
+}
+
+/* Indicador de stock / botón recargar */
+.indicador-stock-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  padding: 0 2px;
+}
+#indicadorActualizacion,
+#indicadorActualizacionGranel {
+  color: #6b7280;
+  font-size: 11px;
+}
+.btn-recargar-catalogo {
+  background: none;
+  border: none;
+  color: #667eea;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  min-height: auto;
+}
+
+/* Fila Cantidad / Agregar al pedido */
+.form-row--cantidad {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+#labelCantidad {
+  font-size: 0.85rem;
+  margin-bottom: 3px;
+  display: block;
+  color: #374151;
+  font-weight: 500;
+}
+#itemCantidad {
+  width: 100%;
+  font-size: 1.1rem;
+  text-align: center;
+  padding: 6px;
+}
+
+/* Líneas del pedido */
+#lineasPedidoContainer {
+  margin: 10px 0 0 0;
+}
+
+/* Subtotal y total */
+#pedidoSubtotalDisplay {
+  font-weight: 600;
+  color: #6b7280;
+  text-align: right;
+  margin-bottom: 4px;
+  font-size: 1.1rem;
+}
+#pedidoTotalDisplay {
+  font-weight: 700;
+  color: #16a34a;
+  text-align: right;
+  margin-bottom: 8px;
+  font-size: 1.3rem;
+}
+
+/* Sección descuento */
+#seccionDescuento {
+  background: #f9fafb;
+  border: 2px dashed #d1d5db;
+  border-radius: 10px;
+  padding: 12px;
+  margin: 10px 0;
+}
+.descuento-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.descuento-titulo {
+  font-weight: 600;
+  color: #374151;
+  font-size: 0.95rem;
+}
+#btnQuitarDescuento {
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  min-height: auto;
+}
+.descuento-body {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.descuento-field {
+  flex: 1;
+  min-width: 130px;
+}
+.descuento-field-label {
+  display: block;
+  font-size: 0.85rem;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+#tipoDescuento,
+#valorDescuento {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+#valorDescuento {
+  text-align: right;
+}
+#btnAplicarDescuento {
+  background: #10b981;
+  color: #fff;
+  border: none;
+  padding: 9px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  min-height: auto;
+}
+#btnAplicarDescuento:hover {
+  background: #059669;
+}
+#descuentoAplicadoInfo {
+  margin-top: 8px;
+  padding: 8px;
+  background: #dcfce7;
+  border-radius: 6px;
+}
+.descuento-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.descuento-info-texto {
+  font-size: 0.9rem;
+  color: #166534;
+}
+#montoDescuentoAplicado {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #dc2626;
+}
+
+/* Panel pago local mixto (PX) */
+#panelPagoLocalMixto {
+  margin-top: 10px;
+  padding: 12px;
+  background: #f0fdf4;
+  border-radius: 8px;
+  border: 1px solid #bbf7d0;
+}
+.px-titulo {
+  margin: 0 0 8px 0;
+  font-weight: 600;
+  color: #166534;
+  font-size: 0.95rem;
+}
+.px-filas {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.px-field {
+  flex: 1;
+  min-width: 120px;
+}
+.px-field-label {
+  font-size: 0.85rem;
+  color: #374151;
+}
+.px-field input {
+  width: 100%;
+  padding: 6px;
+  border: 1px solid #d1fae5;
+  border-radius: 6px;
+  font-size: 1rem;
+}
+#pxValidacion {
+  margin: 6px 0 0 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+/* Botones finales del formulario */
+.form-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.form-actions > button {
+  flex: 1;
+  font-size: 1.1rem;
+}
+
+/* Contenedores cuyo estado inicial es OCULTO (el JS los muestra con style.display) */
+#historialPreview,
+#direccionesUnicas,
+#checkboxConfirmacionContainer,
+#containerProductoGranel,
+#productSearchResults,
+#productSearchResultsGranel,
+#selectedProductCard,
+#selectedProductCardGranel,
+#btnClearSearchProduct,
+#btnClearSearchProductGranel,
+#pedidoSubtotalDisplay,
+#seccionDescuento,
+#descuentoAplicadoInfo,
+#btnQuitarDescuento,
+#panelPagoLocalMixto {
+  display: none;
+}
+
+/* Checkbox de confirmación de dirección */
+.checkbox-confirmacion-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.checkbox-confirmacion-input {
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+.checkbox-confirmacion-texto {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #92400e;
+  line-height: 1.4;
+}
+#checkboxConfirmacionContainer {
+  margin-top: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border: 2px solid #f59e0b;
+  border-radius: 8px;
+}
+
+/* ============================================================
+   MODAL AGREGAR/EDITAR PEDIDO v2 — inputs redondeados y limpios
+   Alinea #formModal con el lenguaje visual de historial.css
+   ============================================================ */
+
+#formModal input,
+#formModal select,
+#formModal textarea {
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  padding: 10px 14px;
+  background: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#formModal input:focus,
+#formModal select:focus,
+#formModal textarea:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+#formModal button {
+  border-radius: 12px;
+}
+
+#formModal .form-label {
+  color: #374151;
+  font-weight: 600;
+}
+
+/* Botones finales: redondeados y tipografía uniforme con el panel */
+.form-actions > button {
+  border-radius: 16px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  padding: 12px 20px;
+  min-height: 48px;
+  letter-spacing: 0.01em;
+}
+
+/* Focus también para el search de productos dentro del modal */
+#formModal .product-search-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+/* ============================================================
+   MODAL REGISTRAR STRIKE (prototipo UI - mismo lenguaje que formModal)
+   ============================================================ */
+.strike-modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1002;
+  background: rgba(15, 23, 42, 0.55);
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.strike-modal {
+  background: #fff;
+  border-radius: 16px;
+  max-width: 460px;
+  width: 100%;
+  padding: 22px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.35);
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.strike-modal.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.strike-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.strike-modal__head h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #c2410c;
+}
+.strike-modal__close {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+.strike-modal__close:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+.strike-modal__cliente {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  color: #92400e;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.strike-modal__label {
+  margin: 12px 0 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+}
+.strike-modal__categorias {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.strike-opcion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 0.92rem;
+  background: #fff;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.strike-opcion:hover {
+  border-color: #fbbf24;
+  background: #fffbeb;
+}
+.strike-opcion input[type="radio"] {
+  accent-color: #c2410c;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.strike-modal__nota {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.strike-modal__nota:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+.strike-modal__acciones {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+  justify-content: flex-end;
+}
+
+/* ============================================================
+   BADGE STRIKES EN CAMPO TELÉFONO (prototipo)
+   ============================================================ */
+.badge-telefono-strikes {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  vertical-align: middle;
 }

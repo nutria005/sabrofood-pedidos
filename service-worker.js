@@ -1,19 +1,17 @@
 // ===================================
 // 🚚 SABROFOOD REPARTO PWA SERVICE WORKER
 // ===================================
-// Versión: 2.1.2-ver-carga-sync-fix
-// Fecha: 17-05-2026
+// Versión: 2.2.0-auditoria-sw
+// Fecha: 20-09-2026
 // 
 // CAMBIOS EN ESTA VERSIÓN:
-// - Network First para archivos críticos (script.js, style.css, index.html)
-// - Cache First solo para assets estáticos (fuentes, imágenes, libs)
-// - Mejor manejo de errores y logs
-// - Soporte para actualización forzada desde la app
-// - Prevención de caché agresivo en iOS PWA
-// - Timeout de 3s en peticiones de red
+// - Se agregaron historial.* y strikes.* a NETWORK FIRST (los paneles nuevos
+//   dejaban de depender del versionado manual ?v= para refrescar caché)
+// - Se eliminó shared/auth.js de la lista (legacy sin uso, ya no se carga)
+// - Rutas de redirección antiguas /repatosabrofood/ reemplazadas por relativas
 // ===================================
 
-const CACHE_VERSION = 'sabrofood-reparto-v2.1.2-ver-carga-sync-fix';
+const CACHE_VERSION = 'sabrofood-reparto-v2.2.0-auditoria';
 const CACHE_NAME = `${CACHE_VERSION}-static`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 
@@ -31,11 +29,16 @@ const NETWORK_FIRST_FILES = [
   './local/style.css',
   './local/ver-carga.js',
   './local/ver-carga.css',
+  './local/historial.html',
+  './local/historial.js',
+  './local/historial.css',
+  './local/strikes.html',
+  './local/strikes.js',
+  './local/strikes.css',
   './repartidor/index.html',
   './repartidor/ver-carga.html',
   './repartidor/script.js',
   './repartidor/style.css',
-  './shared/auth.js',
   './shared/roles-config.js',
   './shared/route-protection.js',
   './shared/supabase-config.js'

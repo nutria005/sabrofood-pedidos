@@ -1,0 +1,450 @@
+/* ============================================================
+   STRIKES — SISTEMA DE DISEÑO SABROFOOD (prototipo navegable)
+   Tarjetas blancas sobre fondo cream, tipografía Space Grotesk/Inter.
+   Comparte topbar/toolbar con ver-carga.css (carga-page-topbar,
+   carga-topbar-link, carga-topbar-btn, carga-quick-filter).
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  /* Paleta del sistema de diseño Sabrofood */
+  --sb-paper:  #fffdf7;
+  --sb-cream:  #faf6ef;
+  --sb-amber:  #b45309;   /* ámbar profundo (acciones de aviso) */
+  --sb-amber-soft: #fde9d0;
+  --sb-forest: #166534;   /* verde bosque (estados ok) */
+  --sb-forest-soft: #dcfce7;
+  --sb-rust:   #c2410c;   /* óxido / rojo quemado (acciones destructivas) */
+  --sb-rust-soft: #ffead9;
+  --sb-ink:    #1c1917;
+  --sb-muted:  #78716c;
+  --sb-line:   #e7e5e4;
+  --sb-shadow: 0 10px 30px rgba(28, 25, 23, 0.08);
+  --sb-radius: 16px;
+
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+.strikes-page-body {
+  background: var(--sb-cream);
+  color: var(--sb-ink);
+  font-family: var(--font-body);
+  line-height: 1.5;
+}
+
+.strikes-shell {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 16px 48px;
+}
+
+/* ---------- ENCABEZADO DE PÁGINA ---------- */
+
+.strikes-main {
+  margin-top: 20px;
+}
+
+.strikes-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.strikes-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.75rem;
+  margin: 0 0 4px;
+  color: var(--sb-ink);
+}
+
+.strikes-subtitle {
+  margin: 0;
+  color: var(--sb-muted);
+  font-size: 0.95rem;
+}
+
+.strikes-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.strikes-proto-note {
+  font-size: 0.8rem;
+  color: var(--sb-muted);
+  background: #fff;
+  border: 1px dashed var(--sb-line);
+  border-radius: 999px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
+/* ---------- TOOLBAR ---------- */
+
+.strikes-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: var(--sb-paper);
+  border: 1px solid var(--sb-line);
+  border-radius: var(--sb-radius);
+  padding: 12px 14px;
+  box-shadow: var(--sb-shadow);
+  margin-bottom: 24px;
+}
+
+.strikes-toolbar input[type="search"] {
+  flex: 1;
+  min-width: 220px;
+  border: 1px solid var(--sb-line);
+  border-radius: 999px;
+  padding: 9px 16px;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.strikes-toolbar input[type="search"]:focus {
+  border-color: var(--sb-amber);
+  box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.15);
+}
+
+.strikes-toolbar-filtros {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Secciones y títulos */
+
+.strikes-seccion {
+  margin-bottom: 32px;
+}
+
+.strikes-seccion__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.strikes-seccion__titulo {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.sb-vacio {
+  color: var(--sb-muted);
+  font-style: italic;
+  padding: 8px 0;
+}
+
+/* ---------- GRID DE TARJETAS ---------- */
+
+.sb-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.sb-grid--revision {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+.sb-grid--alerta {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+/* ---------- TARJETA (papel blanco sobre cream) ---------- */
+
+.sb-card {
+  background: var(--sb-paper);
+  border: 1px solid var(--sb-line);
+  border-radius: var(--sb-radius);
+  box-shadow: var(--sb-shadow);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sb-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 34px rgba(28, 25, 23, 0.12);
+}
+
+.sb-card--revision {
+  border-top: 4px solid var(--sb-rust);
+}
+
+.sb-card--alerta {
+  border-top: 4px solid var(--sb-amber);
+}
+
+.sb-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.sb-card__identidad {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sb-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--sb-amber-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.sb-avatar--pequeño {
+  width: 34px;
+  height: 34px;
+  font-size: 1rem;
+}
+
+.sb-card__nombre {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.sb-card__telefono {
+  margin: 2px 0 0;
+  color: var(--sb-muted);
+  font-size: 0.9rem;
+}
+
+.sb-card__senal {
+  margin: 0;
+  font-size: 0.92rem;
+  background: var(--sb-rust-soft);
+  color: var(--sb-rust);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.sb-card__senal--info {
+  background: var(--sb-amber-soft);
+  color: var(--sb-amber);
+}
+
+/* ---------- BADGES ---------- */
+
+.sb-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
+.sb-badge--rust {
+  background: var(--sb-rust);
+  color: #fff;
+}
+
+.sb-badge--amber {
+  background: var(--sb-amber-soft);
+  color: var(--sb-amber);
+}
+
+.sb-badge--forest {
+  background: var(--sb-forest-soft);
+  color: var(--sb-forest);
+}
+
+/* ---------- HISTORIAL EN TARJETA ---------- */
+
+.sb-historico {
+  border-top: 1px solid var(--sb-line);
+  padding-top: 12px;
+}
+
+.sb-historico-titulo {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--sb-muted);
+}
+
+.sb-histo-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--sb-line);
+  font-size: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.sb-histo-item:last-child {
+  border-bottom: none;
+}
+
+.sb-histo-item--baneado {
+  opacity: 0.55;
+}
+
+.sb-histo-motivo {
+  font-weight: 500;
+}
+
+.sb-histo-meta {
+  color: var(--sb-muted);
+  font-size: 0.82rem;
+  flex: 1;
+  min-width: 130px;
+}
+
+.sb-histo-estado {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--sb-forest);
+  background: var(--sb-forest-soft);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.sb-histo-estado--baneado {
+  color: var(--sb-rust);
+  background: var(--sb-rust-soft);
+}
+
+/* ---------- LISTA DE BANEADOS ---------- */
+
+.sb-lista-baneados {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sb-fila-baneado {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--sb-paper);
+  border: 1px solid var(--sb-line);
+  border-radius: 14px;
+  padding: 12px 16px;
+  box-shadow: var(--sb-shadow);
+}
+
+.sb-fila-baneado__info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sb-fila-baneado__nombre {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.sb-fila-baneado__meta {
+  margin: 2px 0 0;
+  color: var(--sb-muted);
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sb-fila-baneado__quien {
+  font-size: 0.8rem;
+}
+
+/* ---------- BOTONES SABROFOOD (sb-btn) ---------- */
+
+.sb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.92rem;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  text-decoration: none;
+}
+
+.sb-btn:active {
+  transform: scale(0.98);
+}
+
+/* Variante destructiva (Banear) */
+.sb-btn--rust {
+  background: var(--sb-rust);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(194, 65, 12, 0.25);
+}
+
+.sb-btn--rust:hover {
+  background: #9a3412;
+}
+
+/* Variante de aviso (Dejar en observación) */
+.sb-btn--amber {
+  background: var(--sb-amber);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(180, 83, 9, 0.25);
+}
+
+.sb-btn--amber:hover {
+  background: #92400e;
+}
+
+/* Variante fantasma (Descartar / Revertir) */
+.sb-btn--ghost {
+  background: transparent;
+  color: var(--sb-ink);
+  border: 1px solid var(--sb-line);
+}
+
+.sb-btn--ghost:hover {
+  background: var(--sb-cream);
+  border-color: #d6d3d1;
+}
+
+.sb-card__acciones {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+}

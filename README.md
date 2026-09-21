@@ -27,6 +27,7 @@ Este sistema permite:
 - Acceso completo al sistema
 - Historial de clientes con múltiples direcciones
 - Confirmación obligatoria de direcciones
+- 🚫 **Sistema de strikes**: panel "Clientes en Revisión" con baneados, observación y descartes
 
 ### 🚚 Repartidor
 - Ver pedidos del día
@@ -62,6 +63,17 @@ Este sistema permite:
 - Click en "Ver Carga" para ver totales
 - Diferenciación entre efectivo y transferencias
 - Resumen de pedidos entregados
+
+### 5. Sistema de Strikes (Admin)
+- El panel "🚫 Clientes en Revisión" (`local/strikes.html`) gestiona clientes repetidores:
+  - **🧪 Modo práctica** (por defecto): datos inventados en el navegador, sin base de datos.
+    Carga la semilla con "🧪 Cargar datos de ejemplo" para probar y entender el sistema.
+  - **🟢 Modo real (BD)**: contra las tablas de Supabase (requiere ejecutar el SQL de
+    `docs/SETUP-RLS-STRIKES.md` y sesión iniciada).
+  - Puedes alternar entre modos con los botones del panel; la elección se guarda y la
+    respetan todos los paneles (pedidos, historial, reparto).
+- Un cliente **baneado** no puede tener pedidos confirmados (bloqueo en el formulario,
+  tanto en admin como en repartidor).
 
 ---
 
@@ -105,12 +117,11 @@ Este sistema permite:
 2. Configurar credenciales de Supabase en `shared/supabase-config.js`
 3. Crear usuarios en Supabase Authentication
 4. Configurar emails autorizados en `shared/roles-config.js`
-5. **Generar iconos PWA** (ver `PWA-SETUP.md`)
-6. Subir a un hosting (Netlify recomendado) o usar Live Server localmente
+5. Subir a un hosting (Netlify recomendado) o usar Live Server localmente
 
 **Documentación detallada:**
-- Ver `docs/SETUP-RLS.md` para configuración de seguridad
-- Ver `PWA-SETUP.md` para configuración de PWA
+- Ver `docs/SETUP-RLS-STRIKES.md` para la configuración del Sistema de Strikes (SQL + RLS)
+- Ver `docs/analisis-union-proyectos.md` para entender la relación entre las dos apps web
 
 ---
 
@@ -138,6 +149,13 @@ Este sistema permite:
 ⚠️ **Confirmación obligatoria** de direcciones  
 ✨ **Resaltado visual** de campos autocompletados  
 📊 **Múltiples direcciones** con contador de uso  
+
+### Sistema de Strikes (Nuevo)
+🚫 **Clientes en Revisión**: panel dedicado con baneados, observación y descartes  
+🧪 **Modo práctica** sin BD (datos inventados + semilla) para aprender el sistema  
+🟢 **Modo real (BD)** contra Supabase, alternable al instante  
+⛔ **Bloqueo de pedidos** para clientes baneados (admin y repartidor)  
+📜 **Historial de decisiones** (quién y cuándo, 5 motivos oficiales)  
 
 ---
 
@@ -169,10 +187,8 @@ Este sistema permite:
 
 ## 📚 Documentación adicional
 
-- `PWA-SETUP.md` - Guía completa de configuración PWA
-- `icons/README.md` - Instrucciones para generar iconos
-- `docs/SETUP-RLS.md` - Configuración de seguridad Supabase
-- `local/GUIA_PAGO_MIXTO.md` - Guía de pagos mixtos
+- `docs/SETUP-RLS-STRIKES.md` - SQL y RLS del Sistema de Strikes (instrucciones de activación)
+- `docs/analisis-union-proyectos.md` - Relación entre el POS web y la PWA de reparto
 
 ---
 
@@ -202,6 +218,19 @@ Background: #667eea
 ---
 
 ## 📝 Changelog
+
+### v2.2.0 (20/09/2026) - Auditoría PWA
+- 🔧 Rutas de redirección `/repatosabrofood/...` (deploy antiguo) reemplazadas por relativas `../index.html`
+- 🔄 Service Worker: historial.* y strikes.* pasan a estrategia Network First (adiós al problema de caché vieja)
+- 🧹 Eliminado `shared/auth.js` (legacy sin uso) de las 6 páginas
+- 📚 README actualizado con el Sistema de Strikes
+
+### v2.1.0 (20/09/2026) - Sistema de Strikes
+- 🚫 Panel "Clientes en Revisión" con baneados, observación y descartes
+- 🧪 Modo práctica (datos inventados) + 🟢 Modo real (Supabase) alternables desde el panel
+- ⛔ Bloqueo de pedidos para clientes baneados (admin y repartidor)
+- 📜 Historial de decisiones con 5 motivos oficiales
+- 🔀 Conmutador de capa de datos (demo/supabase) con la misma API `{data,error}`
 
 ### v1.2.0 (27/02/2026) - PWA Implementation
 - ✨ Implementación completa de PWA

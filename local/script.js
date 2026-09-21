@@ -136,6 +136,26 @@ const OfflineManager = {
         }).eq('id', datos.id);
         break;
         
+      case 'REGISTRAR_STRIKE':
+        await supabase_client.from('strikes_clientes').insert({
+          id: generarId(),
+          telefono: datos.telefono,
+          nombre: datos.nombre,
+          motivo: datos.motivo,
+          registrado_por: datos.registrado_por,
+          estado: 'ACTIVO',
+          expira_en: datos.expira_en
+        });
+        break;
+        
+      case 'AUTORIZAR_BANEO':
+        await supabase_client
+          .from('strikes_clientes')
+          .update({ estado: 'BANEADO', baneado_por: datos.registrado_por, baneado_en: new Date().toISOString() })
+          .eq('telefono', datos.telefono)
+          .eq('estado', 'ACTIVO');
+        break;
+        
       default:
         console.warn('⚠️ Tipo de acción desconocida:', tipo);
     }
@@ -1600,6 +1620,23 @@ async function guardarPedido() {
     const textoOriginal = btnAgregar.textContent;
     btnAgregar.textContent = 'Guardando...';
     btnAgregar.disabled = true;
+
+    // BLOQUEO STRIKES: cliente baneado no puede confirmar nuevos pedidos
+    // (decisión del administrador; la observación NO bloquea).
+    try {
+      const telStrike = String((validaciones.telefono && validaciones.telefono.valor) || '').replace(/\D/g, '');
+      if (telStrike.length >= 6) {
+        const cons = await Promise.resolve(SistemaStrikes.recurso.consultarCliente(telStrike));
+        if (cons && cons.data && cons.data.contexto.baneado) {
+          ErrorHandler.mostrarError('🚫 Cliente BANEADO: no puede confirmar nuevos pedidos. Solo el administrador puede revisar esta situación.');
+          btnAgregar.textContent = textoOriginal;
+          btnAgregar.disabled = false;
+          return;
+        }
+      }
+    } catch (errStrike) {
+      console.warn('⚠️ Chequeo de baneo omitido (accesorio, no bloquea):', errStrike);
+    }
 
     const { data, error } = await supabase_client.from('pedidos').insert([pedido]);
     
@@ -3101,7 +3138,7 @@ async function mostrarHistorialCliente(telefono, nombreCliente) {
   // Mostrar el modal
   const modalBody = getElement('histModalBody');
   if (modalBody) {
-    modalBody.innerHTML = historialHTML;
+    modalBody.innerHTML = historialHTML + '<div id="strikesSection"></div>';
     getElement('histModal').classList.add('show');
     
     // MEJORA 3: Event listeners para botones "Repetir"
@@ -3113,9 +3150,165 @@ async function mostrarHistorialCliente(telefono, nombreCliente) {
         repetirPedido(pedidoOriginal);
       };
     });
+    
+    // Sección de strikes del cliente
+    const strikesSection = modalBody.querySelector('#strikesSection');
+    if (strikesSection) {
+      renderSeccionStrikes(strikesSection, telefono, nombreCliente);
+    }
   }
 }
 
+function escapeHtml(texto) {
+  return String(texto == null ? '' : texto)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ========================================
+// ============================================================
+// SISTEMA DE STRIKES — INTEGRADOR DEL MÓDULO COMPARTIDO (shared/strikes.js)
+// MODO DEMO (LOCAL): la capa de datos vive en localStorage vía SistemaStrikes.recurso.
+// Fase Supabase: se reimplementará SistemaStrikes.recurso sin tocar este archivo.
+// ============================================================
+
+// Alias de configuración (retrocompatibilidad con el resto del panel)
+const STRIKES_CONFIG = {
+  LIMITE_REVISION: SistemaStrikes.LIMITE_REVISION,
+  VIGENCIA_MESES: SistemaStrikes.VIGENCIA_MESES
+};
+
+function getEmailActualStrikes() {
+  return localStorage.getItem('sabrofood_last_email') || '';
+}
+
+function getRegistradoPorStrikes() {
+  return SistemaStrikes.registradoPorActual();
+}
+
+// ---- Memo cache para badges de tarjetas (evita consultas repetidas al renderizar) ----
+const strikesMemoCache = new Map(); // telefono -> { cargando, activos, baneado, observacion, expiraProxima, raw }
+
+function obtenerResumenStrikesEnMemoria(telefono) {
+  const key = String(telefono || '').trim();
+  const r = strikesMemoCache.get(key);
+  if (!r) return { cargando: false, activos: 0, baneado: false, observacion: false, expiraProxima: false, raw: [] };
+  return r;
+}
+
+async function cargarStrikesConMemo(telefono) {
+  const key = String(telefono || '').trim();
+  if (!key) return;
+  const existente = strikesMemoCache.get(key);
+  if (existente && !existente.cargando && existente.activos !== undefined && existente.activos !== null) return existente.raw;
+  const entrada = { cargando: true, activos: 0, baneado: false, observacion: false, expiraProxima: false, raw: [] };
+  strikesMemoCache.set(key, entrada);
+  try {
+    const res = await SistemaStrikes.recurso.consultarCliente(key);
+    if (res.error || !res.data) {
+      entrada.cargando = false;
+      return entrada.raw;
+    }
+    const c = res.data;
+    entrada.raw = c.strikes;
+    entrada.activos = c.activos;
+    entrada.baneado = c.contexto.baneado;
+    entrada.observacion = c.contexto.enObservacion;
+    entrada.expiraProxima = c.nivel === 'ALERTA_REFORZADA' || c.nivel === 'PENDIENTE_REVISION';
+    entrada.cargando = false;
+    return c.strikes;
+  } catch (err) {
+    entrada.cargando = false;
+    console.warn('⚠️ Carga de strikes omitida (accesorio, no bloquea):', err);
+    return [];
+  }
+}
+
+function pintarBadgeStrikes(slot, resumen) {
+  if (!slot) return;
+  const s = resumen || obtenerResumenStrikesEnMemoria(slot.dataset.telefono);
+  if (s.cargando && s.activos === 0) {
+    slot.textContent = '⏳';
+    slot.style.display = 'inline-block';
+    return;
+  }
+  if (s.baneado) {
+    slot.textContent = '🚫 BANEADO';
+    slot.style.display = 'inline-block';
+    return;
+  }
+  if (s.activos >= SistemaStrikes.LIMITE_REVISION) {
+    slot.textContent = '🔎 Pendiente';
+    slot.style.display = 'inline-block';
+    return;
+  }
+  if (s.activos === 2) {
+    slot.textContent = '⚠️ Alerta';
+    slot.style.display = 'inline-block';
+    return;
+  }
+  if (s.activos === 1) {
+    slot.textContent = '⚠️ Strike';
+    slot.style.display = 'inline-block';
+    return;
+  }
+  if (s.observacion) {
+    slot.textContent = '👁️ Observación';
+    slot.style.display = 'inline-block';
+    return;
+  }
+  slot.style.display = 'none';
+}
+
+function actualizarBadgesStrikesEnPantalla() {
+  document.querySelectorAll('.order-card__strikes').forEach(slot => {
+    const r = obtenerResumenStrikesEnMemoria(slot.dataset.telefono);
+    pintarBadgeStrikes(slot, r);
+  });
+}
+
+// ---- Consulta simple (compatibilidad con el resto del panel) ----
+async function cargarStrikesCliente(telefono) {
+  try {
+    const res = await SistemaStrikes.recurso.obtenerStrikes(telefono);
+    return res.data || [];
+  } catch (err) {
+    console.warn('⚠️ Consulta de strikes falló (accesorio, no bloquea):', err);
+    return [];
+  }
+}
+
+// ---- Registro (compatibilidad; el flujo real usa los modales del módulo) ----
+async function registrarStrikeCliente(telefono, nombreCliente, motivo, registradoPor) {
+  try {
+    const reg = SistemaStrikes.construirRegistro({
+      telefono, nombre: nombreCliente, motivo, observacion: '',
+      pedidoId: null, origen: 'HISTORIAL', registrado_por: registradoPor
+    });
+    if (!reg.ok) { ErrorHandler.mostrarError(reg.mensaje); return false; }
+    const res = await SistemaStrikes.recurso.registrarStrike(reg.strike);
+    if (!res.error && window.ErrorHandler && ErrorHandler.mostrarExito) {
+      ErrorHandler.mostrarExito('Strike registrado correctamente');
+    }
+    return !res.error;
+  } catch (err) {
+    console.error('❌ Error al registrar strike:', err);
+    ErrorHandler.mostrarError('Error al registrar strike: ' + err.message);
+    return false;
+  }
+}
+
+// ---- Render de la sección de strikes del historial del cliente (admin) ----
+async function renderSeccionStrikes(container, telefono, nombreCliente) {
+  if (!container) return;
+  await SistemaStrikes.renderSeccionStrikes(container, telefono, nombreCliente, {
+    esAdmin: true,
+    onRegistrado: () => renderSeccionStrikes(container, telefono, nombreCliente)
+  });
+}
 // Helpers
 function generarId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 function setFechaHoyDefault(){
@@ -4364,13 +4557,48 @@ function limpiarFormulario() {
 
 // Render principal
 // Render principal con sistema de rutas
+// Icono WhatsApp (SVG reutilizado en las pills de contacto)
+const ICONO_WA_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="white" aria-hidden="true">
+  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+</svg>`;
+
+/**
+ * Parsea teléfonos chilenos del campo libre del admin.
+ * El admin guarda números empezando con "9" (ej. "986004682") y ocasionalmente
+ * DOS números separados por guion, barra o espacio (ej. "986004682-997112233").
+ * @param {string} raw - String crudo del teléfono
+ * @returns {{display:string, tel:string, wa:string}[]} - 1 o 2 teléfonos normalizados
+ */
+function parseTelefonosChile(raw) {
+  if (!raw) return [];
+  const numeros = String(raw)
+    .split(/[\s\/\-]+/)               // guion, barra o espacio
+    .map(t => t.replace(/\D/g, ''))  // solo dígitos
+    .filter(t => t.length >= 7)      // descarta ruido
+    .filter((t, i, arr) => arr.indexOf(t) === i); // sin duplicados
+
+  return numeros.slice(0, 2).map(digitos => {
+    // Quita prefijo "56" o "0" inicial si el admin lo pegó así
+    let n = digitos.startsWith('56') && digitos.length === 11 ? digitos.slice(2) : digitos;
+    n = n.replace(/^0+/, '');
+    // Si falta el 9 inicial (móvil chileno), lo agrega
+    if (n.length === 8 && !n.startsWith('9')) n = '9' + n;
+    n = n.slice(0, 9); // límite de seguridad
+    return {
+      display: '9 ' + n.slice(1, 5) + ' ' + n.slice(5), // "9 8600 4682"
+      tel: 'tel:+56' + n,                                // dialer con prefijo +56
+      wa: 'https://wa.me/56' + n                         // WhatsApp con prefijo +56
+    };
+  });
+}
+
 function render(datosParaRenderizar){
   // Guardar los datos actualmente visibles para el modal de carga
   datosFiltrados = datosParaRenderizar || [];
   
   const cont = getElement('resultados'); 
   cont.innerHTML = '';
-  if (!datosParaRenderizar.length){
+  if (!datosParaRenderizar || !datosParaRenderizar.length){
     cont.innerHTML = `<div class="item">No hay datos. Agrega un pedido a la derecha.</div>`;
     datosFiltrados = []; // Limpiar también si no hay datos
     return;
@@ -4379,19 +4607,21 @@ function render(datosParaRenderizar){
   // Ordenar datos por ruta (prioridad + orden manual)
   const datosOrdenados = ordenarPorRuta([...datosParaRenderizar]);
   
-  datosOrdenados.forEach(d => {
-    const esPedidoErroneo = (!d.nombre || d.nombre.trim() === '' || d.nombre === '(sin nombre)') &&
-                            (!d.telefono || d.telefono.trim() === '' || d.telefono === '(sin teléfono)');
+  // SEPARACIÓN POR CATEGORÍAS (orden estricto: Pendientes → Entregados → Anulados)
+  const pendientes = datosOrdenados.filter(d => d.estado !== 'ANULADO' && !d.entregado);
+  const entregados = datosOrdenados.filter(d => d.estado !== 'ANULADO' && d.entregado);
+  const anulados = datosOrdenados.filter(d => d.estado === 'ANULADO');
+
+  // Construye una tarjeta completa (markup + listeners) y la devuelve
+  const crearTarjetaPedido = (d) => {
     const div = document.createElement('div');
-    // Distinguir entre anulado y entregado exitosamente
-    let claseEstado = '';
-    if (d.estado === 'ANULADO') {
-      claseEstado = ' anulado';
-    } else if (d.entregado) {
-      claseEstado = ' delivered';
-    }
-    div.className = 'card-order' + claseEstado;
+    // Clases semánticas del nuevo diseño (lista vertical, 1 columna)
+    div.className = 'order-card'
+      + (d.estado === 'ANULADO' ? ' order-card--anulado' : '')
+      + (d.entregado ? ' order-card--entregado' : '')
+      + (d.estado !== 'ANULADO' && !d.entregado && (d.metodo_pago === 'E' || d.metodo_pago === 'DC') ? ' order-card--por-cobrar' : ' order-card--pagado');
     div.dataset.clienteId = d.id;
+    div.dataset.telefono = d.telefono || '';
 
     const resumenTexto = (Array.isArray(d.items) && d.items.length)
           ? d.items.map(it => {
@@ -4407,8 +4637,11 @@ function render(datosParaRenderizar){
     const prioridad = d.prioridad || 'C';
     const prioridadInfo = PRIORIDADES[prioridad];
 
+    // Extraer el segundo teléfono (se guarda en notas con tag TEL2:) para mostrarlo como contacto pill
+    const { telefonoSecundario, notasLimpias: notasSinTel2 } = extraerTelefonoSecundarioDeNotas(d.notas || '');
+
     // Separar mensaje de cambio de método de pago de las notas regulares
-    let notasRegulares = d.notas || '';
+    let notasRegulares = notasSinTel2;
     let mensajeCambio = '';
     if (notasRegulares.includes('📝 Cambio:')) {
       const partes = notasRegulares.split('📝 Cambio:');
@@ -4419,7 +4652,6 @@ function render(datosParaRenderizar){
     // SEMÁFORO DE COBRO - Detectar si hay que cobrar
     const metodoPago = d.metodo_pago || 'E';
     const debeColectar = (metodoPago === 'E' || metodoPago === 'DC'); // Efectivo o Tarjeta
-    div.classList.add(debeColectar ? 'cobrar-pendiente' : 'cobrar-pagado');
     
     // Badge de NUEVO
     const esNuevo = esPedidoNuevo(d.created_at);
@@ -4428,312 +4660,214 @@ function render(datosParaRenderizar){
     // Badge de REPARTIDOR ASIGNADO
     let badgeRepartidor = '';
     if (d.asignado_a === 'repartidor_1') {
-      badgeRepartidor = '<span style="display:inline-block;background:#3b82f6;color:white;padding:1px 4px;border-radius:3px;font-size:0.5rem;font-weight:700;margin-left:4px;">🚚 R1</span>';
+      badgeRepartidor = '<span class="badge-repartidor badge-repartidor--r1">🚚 R1</span>';
     } else if (d.asignado_a === 'repartidor_2') {
-      badgeRepartidor = '<span style="display:inline-block;background:#10b981;color:white;padding:1px 4px;border-radius:3px;font-size:0.5rem;font-weight:700;margin-left:4px;">🚚 R2</span>';
+      badgeRepartidor = '<span class="badge-repartidor badge-repartidor--r2">🚚 R2</span>';
     }
     
-    // Extraer monto del cobrarLabel
-    const montoMatch = cobrarLabel.match(/\$[\d.,]+/);
-    const montoTexto = montoMatch ? montoMatch[0] : '$0';
-    
-    // Estado de pago para mostrar
-    const estadoPagoTexto = debeColectar ? 'POR COBRAR' : 'PAGADO';
+    // Teléfonos: 1 o 2 números (Chile). Principal + secundario en un solo grupo de contactos
+    const telefonos = parseTelefonosChile([d.telefono, telefonoSecundario].filter(Boolean).join('/'));
+    const grupoTelefonos = telefonos.map(t => `
+      <div class="contacto-pill">
+        <a class="contacto-pill__numero" href="${t.tel}" title="Llamar a ${t.display}">${t.display}</a>
+        <a class="btn-wa" href="${t.wa}" target="_blank" rel="noopener" title="WhatsApp ${t.display}" aria-label="WhatsApp ${t.display}">${ICONO_WA_SVG}</a>
+      </div>
+    `).join('');
     
     div.innerHTML = `
-      <div class="card-row">
-        <div class="card-left">
-          ${badgeNuevo}${badgeRepartidor}
-          <!-- Línea 1: Monto + Nombre en horizontal -->
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-            <span class="price-tag" style="font-size:1rem;padding:2px 6px;">${cobrarLabel}</span>
-            <span class="client-name" style="font-size:1rem;font-weight:600;flex:1;min-width:0;">${d.nombre || '(sin nombre)'}</span>
-          </div>
-          <!-- Línea 2: Teléfono + WhatsApp compacto -->
-          ${d.telefono ? `
-            <div style="display:flex;align-items:center;gap:4px;">
-              <span style="font-size:0.9375rem;">📞</span>
-              <span class="client-phone" data-telefono="${d.telefono}" data-action="call" style="cursor:pointer;font-size:0.9375rem;padding:2px 5px;">${d.telefono}</span>
-              <a href="https://wa.me/56${d.telefono.replace(/\D/g, '')}?text=Hola%20👋,%20somos%20Sabrofood%20🐶🐱%0AQueremos%20avisarte%20que%20tu%20pedido%20ya%20está%20listo%20y%20estamos%20próximos%20a%20realizar%20la%20entrega%20🚚%0A¿Te%20encuentras%20disponible%20para%20recibirlo?%0A¡Quedamos%20atentos!" 
-                 target="_blank" 
-                 style="display:inline-flex;align-items:center;justify-content:center;background:#25d366;color:white;padding:3px;border-radius:50%;text-decoration:none;width:20px;height:20px;"
-                 title="WhatsApp">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
-                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-                </svg>
-              </a>
-            </div>
-          ` : ''}
-          <!-- Línea 3: Dirección compacta -->
-          ${d.direccion ? `<div style="display:flex;align-items:center;gap:3px;" data-direccion="${d.direccion}" data-action="navigation"><span style="font-size:0.875rem;">📍</span><span class="client-address" style="font-size:0.875rem;padding:2px 5px;flex:1;min-width:0;">${d.direccion}</span></div>` : ''}
-          <!-- Línea 4: Productos compacto -->
-          ${resumenTexto !== 'Sin productos' ? `<div style="display:flex;align-items:center;gap:3px;"><span style="font-size:0.875rem;">🛒</span><span class="product-name" style="font-size:0.875rem;padding:2px 5px;flex:1;min-width:0;">${resumenTexto}</span></div>` : ''}
-          
-          ${mensajeCambio ? `<div class="cambio-metodo-pago"><span class="cambio-texto" style="font-size:0.875rem;">${mensajeCambio}</span></div>` : ''}
-        
-        ${notasRegulares ? `
-          <div class="nota-importante" style="background: #fee2e2; border-left: 4px solid #dc2626;">
-            <div class="line">
-              <span class="icon">⚠️</span>
-              <span class="note-destacada" style="color: #991b1b; font-weight: 600;">${notasRegulares}</span>
-            </div>
-          </div>
-        ` : ''}
+      <div class="order-card__top">
+        ${badgeNuevo}${badgeRepartidor}
+        <span class="order-card__strikes" data-telefono="${escapeHtml(d.telefono)}" title="Historial de fallos/anulaciones del cliente"></span>
+        <span class="order-card__precio">${cobrarLabel}</span>
+        <span class="order-card__estado order-card__estado--${debeColectar ? 'cobrar' : 'pagado'}">
+          ${debeColectar ? '💵 POR COBRAR' : '✅ PAGADO'}
+        </span>
+      </div>
+
+      <div class="order-card__nombre">${d.nombre || '(sin nombre)'}</div>
+
+      ${grupoTelefonos ? `
+        <div class="order-card__contacto" aria-label="Teléfonos de contacto">
+          ${grupoTelefonos}
         </div>
-        <div class="ruta-controls">
-          <div class="prioridad-section">
-            <label class="prioridad-label" style="font-size: 0.7rem; font-weight: 600; color: #374151;">🚚:</label>
-            <select class="prioridad-select" data-doc="${d.id}" style="
-              background: ${prioridadInfo.bgColor}; 
-              color: ${prioridadInfo.color}; 
-              border: 1px solid ${prioridadInfo.color};
-              border-radius: 5px;
-              padding: 4px 5px;
-              font-weight: 600;
-              font-size: 0.7rem;
-            ">
-              <option value="A" ${prioridad === 'A' ? 'selected' : ''}>🔴 A - Alta</option>
-              <option value="B" ${prioridad === 'B' ? 'selected' : ''}>🟡 B - Media</option>
-              <option value="C" ${prioridad === 'C' ? 'selected' : ''}>🟢 C - Baja</option>
-            </select>
-          </div>
-          <div class="prioridad-numerica">
-            <label for="orden-${d.id}" style="font-size: 0.7rem; color: #666; margin-bottom: 2px; display: block; font-weight: 600;">🔢:</label>
-            <input 
-              type="number" 
-              id="orden-${d.id}"
-              class="input-orden-entrega"
-              data-doc="${d.id}"
-              value="${(d.orden_ruta && d.orden_ruta <= 99) ? d.orden_ruta : ''}"
-              min="1"
-              max="99"
-              placeholder="#"
-              title="Orden de entrega (1, 2, 3...)"
-              style="
-                width: 50px;
-                height: 30px;
-                padding: 4px 6px;
-                border: 1px solid #ddd;
-                -webkit-appearance: none;
-                -moz-appearance: textfield;
-                border-radius: 5px;
-                font-size: 0.8125rem;
-                font-weight: 600;
-                text-align: center;
-                background: #fff;
-                box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-                transition: all 0.2s ease;
-                -webkit-appearance: none;
-                -moz-appearance: textfield;
-              "
-              onFocus="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 0 0 3px rgba(59,130,246,0.1)'"
-              onBlur="this.style.borderColor='#ddd'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)'"
-            >
+      ` : ''}
+
+      ${d.direccion ? `
+        <button type="button" class="order-card__direccion" data-action="navigation" data-direccion="${escapeHtml(d.direccion)}">
+          📍 ${escapeHtml(d.direccion)}
+        </button>
+      ` : ''}
+
+      ${resumenTexto !== 'Sin productos' ? `
+        <div class="order-card__productos">🛒 ${escapeHtml(resumenTexto)}</div>
+      ` : ''}
+
+      ${mensajeCambio ? `<div class="cambio-metodo-pago"><span class="cambio-texto">${mensajeCambio}</span></div>` : ''}
+
+      ${notasRegulares ? `
+        <div class="nota-importante">
+          <div class="line">
+            <span class="icon">⚠️</span>
+            <span class="note-destacada">${notasRegulares}</span>
           </div>
         </div>
-        
-        <!-- ACCIONES PRINCIPALES DEL REPARTIDOR -->
-        <div class="acciones-repartidor">
-          ${d.estado === 'ANULADO' ? `
-            <!-- Pedido ANULADO: Mostrar opción de reactivar -->
-            <div class="estado-entregado estado-anulado">
-              <span class="entregado-info">
-                🚫 ANULADO - No Cobrado
-              </span>
-            </div>
-            <button class="btn-reactivar-pedido" type="button" aria-label="Reactivar pedido anulado" data-doc="${d.id}">
-              🔄 Reactivar Pedido
-            </button>
-          ` : `
-            <!-- Pedido NORMAL o ENTREGADO -->
-            <button class="btn-entregado-principal ${d.entregado ? 'entregado' : 'pendiente'}" type="button" aria-label="${d.entregado ? 'Marcar como pendiente' : 'Marcar como entregado'}" data-doc="${d.id}" data-entregado="${d.entregado}">
-              ${d.entregado ? '↩️ Desmarcar' : '✓ Entregar'}
-            </button>
-            ${!d.entregado ? `
-              <button class="btn-reagendar-principal" type="button" aria-label="Reagendar pedido" data-doc="${d.id}" data-fecha="${d.fecha}">
-                📅 Reagendar
-              </button>
-            ` : `
-              <div class="estado-entregado">
-                <span class="entregado-info">
-                  ✓ Completado
-                </span>
-              </div>
-            `}
-          `}
-          
-          <!-- Contenedor del botón de menú y dropdown -->
-          <div style="position: relative;">
-            <button class="btn-menu-acciones" type="button" aria-label="Más opciones" data-doc="${d.id}" title="Más opciones">
-              ⚙️
-            </button>
-            
-            <!-- Menú desplegable -->
-            <div class="menu-acciones-dropdown" data-menu="${d.id}" style="display:none;">
-              <button class="menu-item" data-action="historial" data-telefono="${d.telefono}" data-nombre="${d.nombre}">
-                <span class="menu-icon">📚</span>
-                <span class="menu-text">Historial</span>
-              </button>
-              ${!d.entregado && d.estado !== 'ANULADO' ? `
-                <button class="menu-item" data-action="asignar-repartidor" data-doc="${d.id}">
-                  <span class="menu-icon">🚚</span>
-                  <span class="menu-text">Asignar Repartidor</span>
-                </button>
-                <button class="menu-item" data-action="editar" data-doc="${d.id}">
-                  <span class="menu-icon">✏️</span>
-                  <span class="menu-text">Editar</span>
-                </button>
-                <button class="menu-item" data-action="anular" data-doc="${d.id}">
-                  <span class="menu-icon">🚫</span>
-                  <span class="menu-text">Anular</span>
-                </button>
-                <button class="menu-item menu-item-danger" data-action="eliminar" data-doc="${d.id}">
-                  <span class="menu-icon">🗑️</span>
-                  <span class="menu-text">Eliminar</span>
-                </button>
-              ` : ''}
-            </div>
-          </div>
-          
-          <!-- Botón especial para transferencias pendientes -->
-          ${d.metodo_pago === 'TP' && !(d.notas || '').includes('PAGO MIXTO') ? `
-            <button class="btn-transferencia-pagada" type="button" aria-label="Marcar transferencia como pagada" data-doc="${d.id}" style="background: #10b981; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 8px;">
-              💰 Marcar como Pagada
-            </button>
-          ` : ''}
-          
-          <!-- Botón especial para pago mixto con transferencia pendiente -->
-          ${(d.metodo_pago === 'PM' || (d.notas || '').includes('PAGO MIXTO')) && (d.notas || '').includes('Transferencia') && !(d.notas || '').includes('Transferencia PAGADA') ? `
-            <button class="btn-pago-mixto-pagado" type="button" aria-label="Confirmar transferencia del pago mixto" data-doc="${d.id}" style="background: #8b5cf6; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 8px;">
-              💰 Marcar como Pagada
-            </button>
-          ` : ''}
+      ` : ''}
+
+      <div class="order-card__ruta">
+        <div class="order-card__ruta-item">
+          <label class="order-card__ruta-label" for="orden-${d.id}">🚚</label>
+          <select class="prioridad-select" data-doc="${d.id}" aria-label="Prioridad del pedido ${d.id}">
+            <option value="A" ${prioridad === 'A' ? 'selected' : ''}>🔴 A - Alta</option>
+            <option value="B" ${prioridad === 'B' ? 'selected' : ''}>🟡 B - Media</option>
+            <option value="C" ${prioridad === 'C' ? 'selected' : ''}>🟢 C - Baja</option>
+          </select>
+        </div>
+        <div class="order-card__ruta-item">
+          <label class="order-card__ruta-label" for="orden-${d.id}">🔢</label>
+          <input
+            type="number"
+            id="orden-${d.id}"
+            class="input-orden-entrega"
+            data-doc="${d.id}"
+            value="${(d.orden_ruta && d.orden_ruta <= 99) ? d.orden_ruta : ''}"
+            min="1" max="99" placeholder="#" title="Orden de entrega (1, 2, 3...)"
+          >
         </div>
       </div>
-    </div>
+
+      <!-- ACCIONES VISIBLES (sin menú desplegable) -->
+      <div class="order-card__acciones">
+        ${d.estado === 'ANULADO' ? `
+          <span class="order-card__estado-anulado">🚫 ANULADO - No Cobrado</span>
+          <button class="btn-accion btn-accion--primario btn-accion--crecer" type="button" data-doc="${d.id}" data-accion="reactivar" aria-label="Reactivar pedido anulado">
+            🔄 Reactivar Pedido
+          </button>
+        ` : `
+          <button class="btn-accion ${d.entregado ? 'btn-accion--desmarcar' : 'btn-accion--primario'} btn-accion--crecer" type="button"
+            data-doc="${d.id}" data-entregado="${d.entregado}" data-accion="toggle-entregado"
+            aria-label="${d.entregado ? 'Marcar como pendiente' : 'Marcar como entregado'}">
+            ${d.entregado ? '↩️ Desmarcar' : '✓ Entregar'}
+          </button>
+          ${!d.entregado ? `
+            <button class="btn-accion btn-accion--outline btn-accion--azul" type="button" data-doc="${d.id}" data-fecha="${d.fecha}" data-accion="reagendar" aria-label="Reagendar pedido">
+              📅 Reagendar
+            </button>
+          ` : `
+            <span class="order-card__estado-completado">✓ Completado</span>
+          `}
+        `}
+      </div>
+
+      ${d.estado !== 'ANULADO' ? `
+        <div class="order-card__acciones order-card__acciones--secundarias">
+          <button class="btn-accion btn-accion--outline" type="button" data-telefono="${escapeHtml(d.telefono)}" data-nombre="${escapeHtml(d.nombre)}" data-accion="historial" aria-label="Ver historial del cliente">
+            📚 Historial
+          </button>
+          <button class="btn-accion btn-accion--outline" type="button" data-telefono="${escapeHtml(d.telefono)}" data-nombre="${escapeHtml(d.nombre)}" data-accion="registrar-strike" aria-label="Registrar strike al cliente">
+            ⚠️ Strike
+          </button>
+          ${!d.entregado ? `
+            <button class="btn-accion btn-accion--outline" type="button" data-doc="${d.id}" data-accion="asignar-repartidor" aria-label="Asignar repartidor">
+              🚚 Asignar
+            </button>
+            <button class="btn-accion btn-accion--outline" type="button" data-doc="${d.id}" data-accion="editar" aria-label="Editar pedido">
+              ✏️ Editar
+            </button>
+            <button class="btn-accion btn-accion--neutro" type="button" data-doc="${d.id}" data-accion="anular" aria-label="Anular pedido">
+              🚫 Anular
+            </button>
+            <button class="btn-accion btn-accion--peligro" type="button" data-doc="${d.id}" data-accion="eliminar" aria-label="Eliminar pedido">
+              🗑️ Eliminar
+            </button>
+          ` : ''}
+        </div>
+      ` : ''}
+
+      ${d.metodo_pago === 'TP' && !(d.notas || '').includes('PAGO MIXTO') ? `
+        <button class="btn-accion btn-accion--pago" type="button" data-doc="${d.id}" data-accion="transf-pagada" aria-label="Marcar transferencia como pagada">
+          💰 Marcar como Pagada
+        </button>
+      ` : ''}
+
+      ${(d.metodo_pago === 'PM' || (d.notas || '').includes('PAGO MIXTO')) && (d.notas || '').includes('Transferencia') && !(d.notas || '').includes('Transferencia PAGADA') ? `
+        <button class="btn-accion btn-accion--pago-mixto" type="button" data-doc="${d.id}" data-accion="pago-mixto-pagado" aria-label="Confirmar transferencia del pago mixto">
+          💰 Marcar como Pagada
+        </button>
+      ` : ''}
     `;
 
-    // CLICS INTELIGENTES - Dirección y Teléfono
+    // Badge de STRIKES (solo lectura desde memoria, sin llamadas a BD)
+    pintarBadgeStrikes(div.querySelector('.order-card__strikes'), obtenerResumenStrikesEnMemoria(d.telefono));
+
+    // CLIC INTELIGENTE - Dirección (Waze con fallback a Google Maps)
     const direccionEl = div.querySelector('[data-action="navigation"]');
-    const telefonoEl = div.querySelector('[data-action="call"]');
-    
     if (direccionEl) {
       direccionEl.addEventListener('click', (ev) => {
         ev.stopPropagation();
         const direccion = ev.currentTarget.dataset.direccion;
         if (direccion && direccion !== '(sin dirección)') {
-          // Intentar Waze primero, si falla Google Maps
           const wazeUrl = `https://waze.com/ul?q=${encodeURIComponent(direccion)}&navigate=yes`;
           const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(direccion)}`;
           window.open(wazeUrl, '_blank') || window.open(mapsUrl, '_blank');
         }
       });
     }
-    
-    if (telefonoEl) {
-      telefonoEl.addEventListener('click', (ev) => {
+
+    // ACCIONES VISIBLES: delegación directa por botón (data-accion)
+    const btnAcciones = div.querySelectorAll('.btn-accion[data-accion]');
+    btnAcciones.forEach(btn => {
+      btn.onclick = (ev) => {
         ev.stopPropagation();
-        const telefono = ev.currentTarget.dataset.telefono;
-        if (telefono && telefono !== '(sin teléfono)') {
-          window.location.href = `tel:${telefono}`;
+        const accion = btn.dataset.accion;
+        const docId = btn.dataset.doc;
+        switch (accion) {
+          case 'toggle-entregado':
+            toggleEntregado(docId, d.entregado, btn);
+            break;
+          case 'reagendar':
+            reagendarPedido(docId, d.fecha);
+            break;
+          case 'reactivar':
+            reactivarPedido(docId, btn);
+            break;
+          case 'historial':
+            mostrarHistorialCliente(btn.dataset.telefono, btn.dataset.nombre);
+            break;
+          case 'registrar-strike':
+            // Módulo compartido de strikes: modal con motivos oficiales,
+            // confirmación y pedido asociado automático (origen PEDIDO).
+            SistemaStrikes.abrirModalRegistrarStrike({
+              telefono: btn.dataset.telefono,
+              nombre: btn.dataset.nombre,
+              pedidoId: btn.dataset.doc || null,
+              origen: 'PEDIDO'
+            });
+            break;
+          case 'asignar-repartidor':
+            asignarRepartidor(docId);
+            break;
+          case 'editar':
+            editarPedido(docId);
+            break;
+          case 'anular':
+            anularPedido(docId, btn);
+            break;
+          case 'eliminar':
+            eliminarPedido(docId, btn);
+            break;
+          case 'transf-pagada':
+            marcarTransferenciaPagada(docId);
+            break;
+          case 'pago-mixto-pagado':
+            marcarPagoMixtoPagado(docId);
+            break;
         }
-      });
-    }
-    
-    // Swipe desactivado - se usan botones directos
-    
-    // eventos en botones principales del repartidor
-    const btnEntPrincipal = div.querySelector('.btn-entregado-principal');
-    const btnReaPrincipal = div.querySelector('.btn-reagendar-principal');
-    
-    // eventos en botones secundarios
-    const btnRe = div.querySelector('.btn-reagendar'); // mantener compatibilidad
-    const btnEnt = div.querySelector('.btn-entregado'); // mantener compatibilidad
-    const btnReactivar = div.querySelector('.btn-reactivar-pedido');
-    const btnTransfPagada = div.querySelector('.btn-transferencia-pagada');
-    const btnPagoMixtoPagado = div.querySelector('.btn-pago-mixto-pagado');
-    
-    // MEJORA 1: Botón y menú de acciones compacto
-    const btnMenuAcciones = div.querySelector('.btn-menu-acciones');
-    const menuDropdown = div.querySelector('.menu-acciones-dropdown');
-    
-    // eventos en controles de ruta
+      };
+    });
+
+    // Event listeners para ruta (prioridad y orden)
     const selectPrioridad = div.querySelector('.prioridad-select');
     const inputOrden = div.querySelector('.input-orden-entrega');
-    
-    // Event listeners para botones principales del repartidor
-    if(btnEntPrincipal) btnEntPrincipal.onclick = (ev)=>{
-      ev.stopPropagation();
-      toggleEntregado(d.id, d.entregado, ev.currentTarget);
-    };
-    if(btnReaPrincipal) btnReaPrincipal.onclick = (ev)=>{ 
-      ev.stopPropagation(); 
-      reagendarPedido(d.id, d.fecha); 
-    };
-    
-    // Event listeners para botones de compatibilidad (si existen)
-    if(btnRe) btnRe.onclick = (ev)=>{ ev.stopPropagation(); reagendarPedido(d.id, d.fecha); };
-    if(btnEnt) btnEnt.onclick = (ev)=>{
-      ev.stopPropagation();
-      toggleEntregado(d.id, d.entregado, ev.currentTarget);
-    };
-    if(btnReactivar) btnReactivar.onclick = (ev)=>{
-      ev.stopPropagation();
-      reactivarPedido(d.id, ev.currentTarget);
-    };
-    if(btnTransfPagada) btnTransfPagada.onclick = (ev)=>{
-      ev.stopPropagation();
-      marcarTransferenciaPagada(d.id);
-    };
-    if(btnPagoMixtoPagado) {
-      console.log('✅ Botón de Pago Mixto encontrado para pedido:', d.id);
-      btnPagoMixtoPagado.onclick = (ev)=>{
-        ev.stopPropagation();
-        console.log('🔀 Click en botón Pago Mixto - ID:', d.id);
-        marcarPagoMixtoPagado(d.id);
-      };
-    }
-    
-    // MEJORA 1: Event listeners para menú compacto
-    if(btnMenuAcciones) {
-      btnMenuAcciones.onclick = (ev)=>{
-        ev.stopPropagation();
-        toggleMenuAcciones(menuDropdown, btnMenuAcciones);
-      };
-    }
-    
-    if(menuDropdown) {
-      const menuItems = menuDropdown.querySelectorAll('.menu-item');
-      menuItems.forEach(item => {
-        item.onclick = (ev) => {
-          ev.stopPropagation();
-          const action = item.dataset.action;
-          const docId = item.dataset.doc;
-          
-          // Cerrar menú
-          menuDropdown.style.display = 'none';
-          
-          // Ejecutar acción
-          switch(action) {
-            case 'historial':
-              mostrarHistorialCliente(item.dataset.telefono, item.dataset.nombre);
-              break;
-            case 'asignar-repartidor':
-              asignarRepartidor(docId);
-              break;
-            case 'editar':
-              editarPedido(docId);
-              break;
-            case 'anular':
-              anularPedido(docId, item);
-              break;
-            case 'eliminar':
-              eliminarPedido(docId, item);
-              break;
-          }
-        };
-      });
-    }
     
     // Event listeners para ruta
     if(selectPrioridad) selectPrioridad.onchange = (ev) => {
@@ -4756,9 +4890,46 @@ function render(datosParaRenderizar){
       };
     }
 
-    cont.appendChild(div);
+    return div;
+  };
+
+  // Renderizar secciones en orden estricto: Pendientes, Entregados, Anulados
+  const secciones = [
+    { titulo: '🟡 Pendientes', items: pendientes },
+    { titulo: '🟢 Entregados', items: entregados },
+    { titulo: '🔴 Anulados', items: anulados }
+  ];
+  secciones.forEach((seccion) => {
+    if (!seccion.items.length) return;
+    const tituloEl = document.createElement('h3');
+    tituloEl.className = 'categoria-titulo';
+    tituloEl.textContent = `${seccion.titulo} (${seccion.items.length})`;
+    cont.appendChild(tituloEl);
+    // Blindaje: un error en UNA tarjeta nunca debe vaciar toda la lista
+    seccion.items.forEach(d => {
+      try {
+        cont.appendChild(crearTarjetaPedido(d));
+      } catch (err) {
+        console.error('🚨 Error renderizando tarjeta de pedido:', err, d);
+      }
+    });
   });
-  
+
+  // Pre-carga de strikes en memoria (solo lectura): alimenta los badges ⚠️ de las tarjetas
+  // Blindaje: esta carga es accesoria y NUNCA debe interrumpir el render principal
+  try {
+    const telefonosUnicos = [...new Set(datosOrdenados.map(d => String(d.telefono || '').trim()).filter(Boolean))];
+    telefonosUnicos.forEach(tel => {
+      cargarStrikesConMemo(tel)
+        .then(() => {
+          try { actualizarBadgesStrikesEnPantalla(); } catch (err) { console.warn('⚠️ Error actualizando badges de strikes:', err); }
+        })
+        .catch(err => console.warn('⚠️ No se pudieron cargar strikes (accesorio):', err));
+    });
+  } catch (err) {
+    console.warn('⚠️ Precarga de strikes omitida (accesorio):', err);
+  }
+
   // Actualizar resumen de caja después de renderizar
   actualizarResumenCaja(datosLocal, filtroActual);
 }
@@ -5975,7 +6146,10 @@ function configurarBusquedaHistorial() {
   const direccionInput = document.getElementById('direccion');
   
   if (!telefonoInput) return;
-  
+
+  // Callback para "Ver contexto" del aviso de strikes (baneado/observación/alertas)
+  SistemaStrikes.onVerContexto = (tel, nombre) => mostrarHistorialCliente(tel, nombre);
+
   telefonoInput.addEventListener('input', function() {
     const telefono = this.value.replace(/\D/g, ''); // Solo números
     
@@ -5987,6 +6161,8 @@ function configurarBusquedaHistorial() {
     // Buscar con delay para evitar muchas consultas
     historialTimeout = setTimeout(() => {
       buscarHistorialPrevio(telefono);
+      // Aviso dinámico de estado de strikes (baneado bloquea, observación avisa...)
+      SistemaStrikes.pintarAvisoClienteEnFormulario(telefono);
     }, 500); // Esperar 500ms después de dejar de escribir
   });
   

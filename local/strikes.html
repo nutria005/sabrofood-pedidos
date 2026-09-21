@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Panel de clientes con strikes - revisión, alertas, baneados y observación (modo práctica sin BD / modo real con Supabase)">
+  <meta name="theme-color" content="#667eea">
+  <title>🚫 Clientes en Revisión | Sabrofood Reparto</title>
+  <link rel="manifest" href="../manifest.json">
+  <link rel="stylesheet" href="style.css?v=20251221">
+  <link rel="stylesheet" href="ver-carga.css?v=2026051702">
+  <link rel="stylesheet" href="strikes.css?v=1" />
+  <style>
+    /* Selector Práctica / Real (BD) del sistema de strikes */
+    .sb-modo-switch{display:inline-flex;gap:4px;align-items:center;}
+    .sb-modo-btn{border:1px solid #d1d5db;background:#fff;cursor:pointer;padding:6px 12px;font-size:0.8rem;border-radius:8px;color:#374151;line-height:1.2;}
+    .sb-modo-btn:hover:not(.is-active){background:#fef3c7;}
+    .sb-modo-btn.is-active{background:#f59e0b;border-color:#f59e0b;color:#1c1c1c;font-weight:700;}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../shared/supabase-config.js?v=20251217"></script>
+  <script src="../shared/roles-config.js"></script>
+  <script src="../shared/route-protection.js"></script>
+  <script src="../shared/strikes.js?v=2"></script>
+  <script>
+    verificarAutenticacionYRedirigir('../index.html');
+  </script>
+  <script src="strikes.js?v=2" defer></script>
+</head>
+<body class="strikes-page-body">
+  <div class="strikes-shell">
+
+    <!-- TOPBAR (mismo patrón que ver-carga.html) -->
+    <div class="carga-page-topbar">
+      <a href="./index.html" class="carga-topbar-link">← Volver a Reparto</a>
+      <div class="carga-topbar-actions">
+        <a href="./historial.html" class="carga-topbar-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#8b5cf6 0%,#6366f1 50%,#667eea 100%);color:#fff;font-weight:700;border:none;box-shadow:0 4px 12px rgba(102,126,234,0.45);" title="Historial completo: estadísticas, ranking VIP y exportación">📊 Historial</a>
+      </div>
+    </div>
+
+    <main class="strikes-main">
+      <!-- ENCABEZADO -->
+      <section class="strikes-page-header">
+        <div>
+          <h1 class="strikes-title">🚫 Clientes en Revisión</h1>
+          <p class="strikes-subtitle">Sistema de strikes por teléfono · 3+ activos = pendiente de revisión (baneo lo autoriza solo el admin)</p>
+        </div>
+        <div class="strikes-header-right">
+          <span id="strikesTotalBadge" class="sb-badge sb-badge--rust">— en revisión</span>
+          <button type="button" id="sbSeedBtn" class="carga-topbar-btn" style="border:none;cursor:pointer;" onclick="cargarDatosEjemplo()">🧪 Cargar datos de ejemplo</button>
+          <div class="sb-modo-switch" role="group" aria-label="Modo de datos del sistema de strikes (práctica sin BD o real con Supabase)">
+            <button type="button" id="sbModoBtnDemo" class="carga-topbar-btn sb-modo-btn" data-modo="demo" title="Modo práctica: datos inventados en este navegador (localStorage), sin base de datos. Ideal para probar y entender el sistema.">🧪 Práctica</button>
+            <button type="button" id="sbModoBtnSupabase" class="carga-topbar-btn sb-modo-btn" data-modo="supabase" title="Modo real: consulta las tablas de Supabase (requiere sesión y que existan strikes_clientes y decisiones_cliente).">🟢 Real (BD)</button>
+          </div>
+          <span id="sbModoNota" class="strikes-proto-note" title="Puedes alternar entre práctica (datos locales) y real (Supabase) sin tocar código">🧪 modo práctica · datos locales</span>
+        </div>
+      </section>
+
+      <!-- TOOLBAR -->
+      <div class="strikes-toolbar">
+        <input type="search" id="strikesBuscar" placeholder="🔍 Buscar por teléfono o nombre..." aria-label="Buscar cliente en revisión">
+        <div class="strikes-toolbar-filtros" role="group" aria-label="Filtrar secciones del panel de strikes">
+          <button type="button" class="carga-quick-filter" data-seccion-filtro="todos">Todas</button>
+          <button type="button" class="carga-quick-filter" data-seccion-filtro="pendientes">🚨 Pendientes</button>
+          <button type="button" class="carga-quick-filter" data-seccion-filtro="alertas">👥 Alertas</button>
+          <button type="button" class="carga-quick-filter" data-seccion-filtro="baneados">🚫 Baneados</button>
+          <button type="button" class="carga-quick-filter" data-seccion-filtro="observacion">👁️ Observación</button>
+          <button type="button" class="carga-quick-filter" data-seccion-filtro="sinActivos">📋 Sin activos</button>
+        </div>
+      </div>
+
+      <!-- CONTENIDO (se renderiza por strikes.js) -->
+      <div id="strikesContenido" class="strikes-secciones" aria-live="polite"></div>
+    </main>
+  </div>
+</body>
+</html>

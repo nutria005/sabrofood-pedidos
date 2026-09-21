@@ -1,4 +1,8 @@
 // === SISTEMA DE AUTENTICACIÓN CON SUPABASE ===
+// ⚠️ LEGACY / SIN USO (desde 20-09-2026): ya no se carga en ninguna página.
+// Las funciones reales de Supabase Auth están en supabase-config.js y cada panel
+// define su propio cierre de sesión (local/script.js, repartidor/script.js).
+// Se conserva solo como referencia; puede eliminarse en una limpieza futura.
 // Este archivo provee funciones de compatibilidad con el código existente
 // Las funciones reales de Supabase Auth están en supabase-config.js
 
@@ -30,7 +34,7 @@ async function cerrarSesion() {
   if (typeof supabaseLogout !== 'function') {
     console.error('❌ supabaseLogout no está disponible. Asegúrate de incluir supabase-config.js');
     // Forzar redirección de todos modos
-    window.location.href = '/repatosabrofood/index.html';
+    window.location.href = '../index.html';
     return;
   }
   
@@ -41,5 +45,5 @@ async function cerrarSesion() {
   }
   
   // Redirigir al login
-  window.location.href = '/repatosabrofood/index.html';
+  window.location.href = '../index.html';
 }

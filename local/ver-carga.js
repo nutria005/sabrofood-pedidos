@@ -199,7 +199,19 @@ function esItemGranel(nombreProducto) {
 
 function calcularBultosItem(item) {
   if (esItemGranel(item.nombre)) return 1;
-  return parseInt(item.cantidad, 10) || 0;
+
+  const cantidad = parsearCantidadDecimal(String(item.cantidad ?? ''));
+  if (!cantidad) return 0;
+
+  return Math.max(1, Math.ceil(cantidad));
+}
+
+function parsearCantidadDecimal(valor) {
+  const texto = String(valor ?? '').trim();
+  if (!texto) return null;
+
+  const numero = Number.parseFloat(texto.replace(/[^0-9.,]/g, '').replace(',', '.').replace(/\.(?=.*\.)/g, ''));
+  return Number.isFinite(numero) && numero > 0 ? numero : null;
 }
 
 function parsearPesoKg(valor) {
@@ -1118,6 +1130,27 @@ async function descontarStockItem(itemInfo) {
   if (!itemInfo.productoId || itemInfo.productoId <= 0) return;
 
   try {
+    const repartidorActivo = obtenerRepartidorActivoCarga();
+
+    if (repartidorActivo && itemInfo.pedidoId) {
+      try {
+        const { data: pedidoActual } = await supabase_client
+          .from('pedidos')
+          .select('id, asignado_a')
+          .eq('id', itemInfo.pedidoId)
+          .maybeSingle();
+
+        if (pedidoActual && !pedidoActual.asignado_a) {
+          await supabase_client
+            .from('pedidos')
+            .update({ asignado_a: repartidorActivo })
+            .eq('id', itemInfo.pedidoId);
+        }
+      } catch (pedidoError) {
+        console.warn('No se pudo asociar el pedido al repartidor activo en ver carga:', pedidoError);
+      }
+    }
+
     const { data: producto, error: errorGet } = await supabase_client
       .from('productos')
       .select('stock, nombre')
@@ -1145,8 +1178,10 @@ async function descontarStockItem(itemInfo) {
         cantidad: itemInfo.cantidad,
         stock_anterior: stockAnterior,
         stock_nuevo: nuevoStock,
-        usuario: 'sistema_carga',
-        motivo: 'Bulto cargado para reparto'
+        usuario: repartidorActivo ? `carga_${repartidorActivo}` : 'sistema_carga',
+        motivo: repartidorActivo
+          ? `Bulto cargado para reparto (${repartidorActivo})`
+          : 'Bulto cargado para reparto'
       }]);
   } catch (error) {
     console.warn('No se pudo descontar stock del item marcado:', error);

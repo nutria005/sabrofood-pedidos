@@ -18,12 +18,12 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="../shared/supabase-config.js?v=20251217"></script>
   <script src="../shared/roles-config.js"></script>
-  <script src="../shared/auth.js?v=20251217"></script>
   <script src="../shared/route-protection.js"></script>
+  <script src="../shared/strikes.js?v=2"></script>
   <script>
     // === PROTECCIÓN DE RUTA ===
     // Verificar autenticación antes de cargar la página
-    verificarAutenticacionYRedirigir('/repatosabrofood/index.html');
+    verificarAutenticacionYRedirigir('../index.html');
   </script>
   <script src="script.js?v=20260228001" defer></script>
 </head>
@@ -49,8 +49,16 @@
           📦 Ver Carga
         </a>
         
-        <a href="./historial.html" class="btn-ver-carga" aria-label="Abrir historial completo" style="background:rgba(255,255,255,0.95);color:#764ba2;font-weight:600;border:none;box-shadow:0 2px 8px rgba(0,0,0,0.15);text-decoration:none;display:inline-flex;align-items:center;justify-content:center;">
-          📊 Historial
+        <a href="./historial.html" aria-label="Abrir historial completo" title="Historial completo: estadísticas, ranking VIP y exportación" style="text-decoration:none;display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:10px;background:linear-gradient(135deg,#8b5cf6 0%,#6366f1 50%,#667eea 100%);color:#fff;font-weight:700;font-size:0.9rem;border:none;box-shadow:0 4px 12px rgba(102,126,234,0.45);transition:transform .15s,box-shadow .15s;cursor:pointer;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 16px rgba(102,126,234,0.55)';" onmouseout="this.style.transform='';this.style.boxShadow='0 4px 12px rgba(102,126,234,0.45)';">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M3 3v18h18"/>
+            <path d="M7 15l4-6 4 3 5-8"/>
+          </svg>
+          Historial
+        </a>
+        
+        <a href="./strikes.html" class="btn-ver-carga" aria-label="Abrir panel de clientes en revisión" style="background:rgba(255,255,255,0.95);color:#c2410c;font-weight:600;border:none;box-shadow:0 2px 8px rgba(0,0,0,0.15);text-decoration:none;display:inline-flex;align-items:center;justify-content:center;">
+          🚫 Clientes en Revisión
         </a>
         
         <div id="offlineCounter" class="offline-counter" style="display:none;" role="status" aria-live="polite">
@@ -231,17 +239,13 @@
     +
   </button>
 
-  <div id="formModalBackdrop" 
-       style="position:fixed;inset:0;background:rgba(30,41,59,.18);display:none;align-items:center;justify-content:center;z-index:9999;"
+  <div id="formModalBackdrop"
        role="dialog"
        aria-hidden="true"
        aria-labelledby="formModalTitle">
-    <div id="formModal" 
-         style="background:#fff;border-radius:18px;box-shadow:0 10px 30px rgba(30,41,59,.18);max-width:540px;width:100%;padding:32px 28px;position:relative;max-height:90vh;overflow-y:auto;">
+    <div id="formModal">
       
-      <button id="btnCloseForm" 
-              style="position:absolute;top:18px;right:18px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;padding:4px 12px;cursor:pointer;font-size:1.2rem;"
-              aria-label="Cerrar formulario">
+      <button id="btnCloseForm" aria-label="Cerrar formulario">
         ✕
       </button>
       
@@ -252,38 +256,38 @@
           
           <div class="form-row">
             <label for="telefono" class="sr-only">Teléfono del cliente</label>
-            <input id="telefono" type="tel" placeholder="📱 Teléfono (Obligatorio)" style="margin-bottom:8px;" required aria-required="true" />
+            <input id="telefono" type="tel" placeholder="📱 Teléfono (Obligatorio)" required aria-required="true" />
           </div>
 
           <div class="form-row">
             <label for="telefonoSecundario" class="sr-only">Segundo teléfono del cliente</label>
-            <input id="telefonoSecundario" type="tel" placeholder="📞 Segundo teléfono (opcional)" style="margin-bottom:8px;" />
+            <input id="telefonoSecundario" type="tel" placeholder="📞 Segundo teléfono (opcional)" />
           </div>
           
           <div class="form-row">
             <label for="nombre" class="sr-only">Nombre del cliente</label>
-            <input id="nombre" type="text" placeholder="👤 Nombre (opcional)" style="margin-bottom:8px;" />
+            <input id="nombre" type="text" placeholder="👤 Nombre (opcional)" />
           </div>
           
           <div class="form-row">
             <label for="direccion" class="sr-only">Dirección de entrega</label>
-            <input id="direccion" type="text" placeholder="📍 Dirección de entrega" style="margin-bottom:8px;" />
+            <input id="direccion" type="text" placeholder="📍 Dirección de entrega" />
           </div>
           
           <!-- Checkbox de confirmación de dirección -->
-          <div class="form-row" style="margin-top: 12px; padding: 12px; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 2px solid #f59e0b; border-radius: 8px; display: none;" id="checkboxConfirmacionContainer">
-            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; user-select: none;">
-              <input type="checkbox" id="checkboxConfirmacionDireccion" style="margin-top: 3px; width: 18px; height: 18px; cursor: pointer;" />
-              <span style="font-size: 0.9rem; font-weight: 600; color: #92400e; line-height: 1.4;">
+          <div class="form-row" id="checkboxConfirmacionContainer">
+            <label class="checkbox-confirmacion-label">
+              <input type="checkbox" id="checkboxConfirmacionDireccion" class="checkbox-confirmacion-input" />
+              <span class="checkbox-confirmacion-texto">
                 ⚠️ <strong>CONFIRMACIÓN OBLIGATORIA:</strong> Verifiqué que la dirección de entrega es correcta para este pedido
               </span>
             </label>
           </div>
         </fieldset>
         
-        <div id="historialPreview" class="historial-preview-nuevo" style="display:none; margin-bottom:16px;" aria-live="polite">
+        <div id="historialPreview" class="historial-preview-nuevo" aria-live="polite">
           <div class="historial-header-nuevo">
-            <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="historial-header-inner">
               <span class="historial-icon">📚</span>
               <div>
                 <span class="historial-title-nuevo">Historial del Cliente</span>
@@ -293,10 +297,10 @@
           </div>
           
           <!-- Sección de Direcciones Únicas -->
-          <div id="direccionesUnicas" class="direcciones-unicas-container" style="display:none;">
+          <div id="direccionesUnicas" class="direcciones-unicas-container">
             <div class="direcciones-header">
-              <span style="font-size: 0.85rem; font-weight: 700; color: #1e40af; text-transform: uppercase; letter-spacing: 0.5px;">📍 Direcciones de Entrega</span>
-              <span style="font-size: 0.75rem; color: #6b7280;">Selecciona una dirección</span>
+              <span class="direcciones-header-title">📍 Direcciones de Entrega</span>
+              <span class="direcciones-header-sub">Selecciona una dirección</span>
             </div>
             <div id="listaDirecciones" class="lista-direcciones"></div>
           </div>
@@ -313,12 +317,12 @@
           <div class="form-row-grid">
             <div class="form-field">
               <label for="fechaEntrega" class="form-label">Fecha de Entrega</label>
-              <input id="fechaEntrega" type="date" style="font-size:1.05rem;" required aria-required="true" />
+              <input id="fechaEntrega" type="date" required aria-required="true" />
             </div>
             
             <div class="form-field">
               <label for="rutaSelect" class="form-label">Ruta</label>
-              <select id="rutaSelect" style="font-size:1.05rem;" aria-label="Seleccionar ruta de entrega">
+              <select id="rutaSelect" aria-label="Seleccionar ruta de entrega">
                 <option value="A">🔴 Ruta A - Alta</option>
                 <option value="B">🟡 Ruta B - Media</option>
                 <option value="C">🟢 Ruta C - Baja</option>
@@ -326,9 +330,9 @@
             </div>
           </div>
           
-          <div class="form-row" style="margin-top:12px;">
-            <label for="asignadoA" class="form-label" style="display:block;margin-bottom:6px;font-weight:600;color:#374151;">🚚 Asignar a Chofer</label>
-            <select id="asignadoA" style="font-size:1.05rem;" aria-label="Asignar pedido a chofer">
+          <div class="form-row form-row--chofer">
+            <label for="asignadoA" class="form-label">🚚 Asignar a Chofer</label>
+            <select id="asignadoA" aria-label="Asignar pedido a chofer">
               <option value="repartidor_1">Repartidor 1</option>
               <option value="repartidor_2">Repartidor 2</option>
             </select>
@@ -339,12 +343,12 @@
           <legend class="section-title">🛒 Productos del Pedido</legend>
           
           <!-- Selector de tipo de producto -->
-          <div class="form-row" style="margin-bottom:10px;">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <div class="form-row form-row--tipo-producto">
+            <label class="radio-producto-label">
               <input type="radio" name="tipoProducto" value="catalogo" checked id="radioProductoCatalogo" />
               <span>📦 Producto del catálogo (sacos)</span>
             </label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <label class="radio-producto-label">
               <input type="radio" name="tipoProducto" value="granel" id="radioProductoGranel" />
               <span>⚖️ Producto a granel</span>
             </label>
@@ -353,12 +357,11 @@
           <!-- BUSCADOR INTELIGENTE DE PRODUCTOS (CATÁLOGO SACOS) -->
           <div id="containerProductoCatalogo">
             <!-- Indicador de actualización de stock -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding: 0 2px;">
-              <small id="indicadorActualizacion" style="color: #6b7280; font-size: 11px;">
+            <div class="indicador-stock-header">
+              <small id="indicadorActualizacion">
                 Cargando catálogo...
               </small>
-              <button onclick="recargarCatalogoManual()" 
-                      style="background: none; border: none; color: #667eea; cursor: pointer; font-size: 11px; padding: 3px 6px; display: flex; align-items: center; gap: 3px; border-radius: 4px; transition: all 0.2s;"
+              <button class="btn-recargar-catalogo" onclick="recargarCatalogoManual()" 
                       onmouseover="this.style.background='#f3f4f6'"
                       onmouseout="this.style.background='none'"
                       title="Recargar catálogo de productos">
@@ -379,7 +382,7 @@
                      placeholder="🔍 Busca por nombre, marca o categoría..."
                      class="product-search-input"
                      autocomplete="off">
-              <button class="btn-clear-search-product" id="btnClearSearchProduct" style="display: none;">
+              <button class="btn-clear-search-product" id="btnClearSearchProduct">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                   <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                 </svg>
@@ -387,12 +390,12 @@
             </div>
             
             <!-- Resultados de búsqueda -->
-            <div id="productSearchResults" class="product-search-results" style="display:none;">
+            <div id="productSearchResults" class="product-search-results">
               <!-- Las tarjetas de productos se insertarán aquí -->
             </div>
             
             <!-- Producto seleccionado -->
-            <div id="selectedProductCard" class="selected-product-card" style="display:none;">
+            <div id="selectedProductCard" class="selected-product-card">
               <div class="selected-product-info">
                 <div class="selected-product-name"></div>
                 <div class="selected-product-details">
@@ -409,14 +412,13 @@
           </div>
           
           <!-- BUSCADOR INTELIGENTE DE PRODUCTOS GRANEL -->
-          <div id="containerProductoGranel" style="display:none;">
+          <div id="containerProductoGranel">
             <!-- Indicador de actualización de stock -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding: 0 2px;">
-              <small id="indicadorActualizacionGranel" style="color: #6b7280; font-size: 11px;">
+            <div class="indicador-stock-header">
+              <small id="indicadorActualizacionGranel">
                 Cargando catálogo granel...
               </small>
-              <button onclick="recargarCatalogoGranel()" 
-                      style="background: none; border: none; color: #667eea; cursor: pointer; font-size: 11px; padding: 3px 6px; display: flex; align-items: center; gap: 3px; border-radius: 4px; transition: all 0.2s;"
+              <button class="btn-recargar-catalogo" onclick="recargarCatalogoGranel()" 
                       onmouseover="this.style.background='#f3f4f6'"
                       onmouseout="this.style.background='none'"
                       title="Recargar catálogo de productos granel">
@@ -437,7 +439,7 @@
                      placeholder="🔍 Busca productos a granel..."
                      class="product-search-input"
                      autocomplete="off">
-              <button class="btn-clear-search-product" id="btnClearSearchProductGranel" style="display: none;">
+              <button class="btn-clear-search-product" id="btnClearSearchProductGranel">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                   <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                 </svg>
@@ -445,12 +447,12 @@
             </div>
             
             <!-- Resultados de búsqueda granel -->
-            <div id="productSearchResultsGranel" class="product-search-results" style="display:none;">
+            <div id="productSearchResultsGranel" class="product-search-results">
               <!-- Las tarjetas de productos granel se insertarán aquí -->
             </div>
             
             <!-- Producto granel seleccionado -->
-            <div id="selectedProductCardGranel" class="selected-product-card" style="display:none;">
+            <div id="selectedProductCardGranel" class="selected-product-card">
               <div class="selected-product-info">
                 <div class="selected-product-name"></div>
                 <div class="selected-product-details">
@@ -467,10 +469,10 @@
           </div>
           
           <!-- CANTIDAD/MONTO Y BOTÓN AGREGAR -->
-          <div class="form-row" style="display:grid;grid-template-columns:1fr 2fr;gap:8px;align-items:center;margin-top:8px;">
+          <div class="form-row form-row--cantidad">
             <div>
-              <label for="itemCantidad" id="labelCantidad" style="font-size:0.85rem;margin-bottom:3px;display:block;">Cantidad:</label>
-              <input id="itemCantidad" type="number" min="1" value="1" placeholder="Cant." style="width:100%;font-size:1.1rem;text-align:center;padding:6px;" aria-label="Cantidad de producto" />
+              <label for="itemCantidad" id="labelCantidad">Cantidad:</label>
+              <input id="itemCantidad" type="number" min="1" value="1" placeholder="Cant." aria-label="Cantidad de producto" />
             </div>
             
             <button type="button" id="btnAnadirItem" class="btn-add-to-order" aria-label="Añadir producto al pedido">
@@ -478,33 +480,33 @@
             </button>
           </div>
           
-          <div id="lineasPedidoContainer" style="margin:10px 0 0 0;" role="list" aria-label="Lista de productos en el pedido"></div>
+          <div id="lineasPedidoContainer" role="list" aria-label="Lista de productos en el pedido"></div>
           
           <!-- Subtotal (antes del descuento) -->
-          <div id="pedidoSubtotalDisplay" style="font-weight:600;color:#6b7280;text-align:right;margin-bottom:4px;font-size:1.1rem;display:none;" aria-live="polite"></div>
+          <div id="pedidoSubtotalDisplay" aria-live="polite"></div>
           
           <!-- 💰 SISTEMA DE DESCUENTO MANUAL -->
-          <div id="seccionDescuento" style="background:#f9fafb;border:2px dashed #d1d5db;border-radius:10px;padding:12px;margin:10px 0;display:none;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-              <label style="font-weight:600;color:#374151;font-size:0.95rem;">💰 Aplicar Descuento (Opcional)</label>
-              <button type="button" id="btnQuitarDescuento" style="background:#ef4444;color:white;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;display:none;" title="Quitar descuento">
+          <div id="seccionDescuento">
+            <div class="descuento-header">
+              <label class="descuento-titulo">💰 Aplicar Descuento (Opcional)</label>
+              <button type="button" id="btnQuitarDescuento" title="Quitar descuento">
                 ✕ Quitar
               </button>
             </div>
             
-            <div style="display:flex;gap:8px;align-items:flex-end;">
+            <div class="descuento-body">
               <!-- Tipo de descuento -->
-              <div style="flex:1;">
-                <label for="tipoDescuento" style="display:block;font-size:0.85rem;color:#6b7280;margin-bottom:4px;">Tipo:</label>
-                <select id="tipoDescuento" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem;">
+              <div class="descuento-field">
+                <label for="tipoDescuento" class="descuento-field-label">Tipo:</label>
+                <select id="tipoDescuento">
                   <option value="monto">💵 Monto Fijo</option>
                   <option value="porcentaje">% Porcentaje</option>
                 </select>
               </div>
               
               <!-- Valor del descuento -->
-              <div style="flex:1;">
-                <label for="valorDescuento" style="display:block;font-size:0.85rem;color:#6b7280;margin-bottom:4px;">
+              <div class="descuento-field">
+                <label for="valorDescuento" class="descuento-field-label">
                   <span id="labelValorDescuento">Descuento ($):</span>
                 </label>
                 <input type="number" 
@@ -512,39 +514,38 @@
                        min="0" 
                        step="100"
                        placeholder="0"
-                       style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem;text-align:right;"
                        aria-label="Valor del descuento">
               </div>
               
               <!-- Botón aplicar -->
               <div>
-                <button type="button" id="btnAplicarDescuento" style="background:#10b981;color:white;border:none;padding:9px 16px;border-radius:6px;cursor:pointer;font-size:0.9rem;font-weight:600;white-space:nowrap;">
+                <button type="button" id="btnAplicarDescuento">
                   ✓ Aplicar
                 </button>
               </div>
             </div>
             
             <!-- Descuento aplicado (vista previa) -->
-            <div id="descuentoAplicadoInfo" style="margin-top:8px;padding:8px;background:#dcfce7;border-radius:6px;display:none;">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span style="font-size:0.9rem;color:#166534;">
+            <div id="descuentoAplicadoInfo">
+              <div class="descuento-info-row">
+                <span class="descuento-info-texto">
                   <strong>Descuento:</strong> <span id="textoDescuentoAplicado"></span>
                 </span>
-                <span id="montoDescuentoAplicado" style="font-size:1rem;font-weight:700;color:#dc2626;"></span>
+                <span id="montoDescuentoAplicado"></span>
               </div>
             </div>
           </div>
           
           <!-- Total final -->
-          <div id="pedidoTotalDisplay" style="font-weight:700;color:#16a34a;text-align:right;margin-bottom:8px;font-size:1.3rem;" aria-live="polite"></div>
+          <div id="pedidoTotalDisplay" aria-live="polite"></div>
         </fieldset>
         
         <fieldset class="form-section">
           <legend class="section-title">💳 Método de Pago</legend>
           
-          <div class="form-row" style="margin-bottom:8px;">
+          <div class="form-row">
             <label for="metodoPago" class="sr-only">Método de pago</label>
-            <select id="metodoPago" style="font-size:1.05rem;" aria-label="Seleccionar método de pago" onchange="togglePanelPagoLocal()">
+            <select id="metodoPago" aria-label="Seleccionar método de pago" onchange="togglePanelPagoLocal()">
               <option value="" disabled selected>-- Seleccionar Pago --</option>
               <option value="E">💵 Efectivo</option>
               <option value="DC">💳 Débito/Crédito</option>
@@ -557,40 +558,38 @@
           </div>
 
           <!-- Sub-panel solo visible para PX (Pagado Local Mixto) -->
-          <div id="panelPagoLocalMixto" style="display:none; margin-top:10px; padding:12px; background:#f0fdf4; border-radius:8px; border:1px solid #bbf7d0;">
-            <p style="margin:0 0 8px 0; font-weight:600; color:#166534; font-size:0.95rem;">🔀 ¿Cuánto pagó de cada forma?</p>
-            <div style="display:flex; gap:12px; flex-wrap:wrap;">
-              <div style="flex:1; min-width:120px;">
-                <label style="font-size:0.85rem; color:#374151;">💵 Efectivo: $</label>
+          <div id="panelPagoLocalMixto">
+            <p class="px-titulo">🔀 ¿Cuánto pagó de cada forma?</p>
+            <div class="px-filas">
+              <div class="px-field">
+                <label class="px-field-label">💵 Efectivo: $</label>
                 <input type="number" id="pxEfectivo" min="0" value="0" step="1000"
-                  style="width:100%; padding:6px; border:1px solid #d1fae5; border-radius:6px; font-size:1rem;"
                   oninput="actualizarTotalPX()">
               </div>
-              <div style="flex:1; min-width:120px;">
-                <label style="font-size:0.85rem; color:#374151;">💳 Tarjeta: $</label>
+              <div class="px-field">
+                <label class="px-field-label">💳 Tarjeta: $</label>
                 <input type="number" id="pxTarjeta" min="0" value="0" step="1000"
-                  style="width:100%; padding:6px; border:1px solid #d1fae5; border-radius:6px; font-size:1rem;"
                   oninput="actualizarTotalPX()">
               </div>
             </div>
-            <p id="pxValidacion" style="margin:6px 0 0 0; font-size:0.85rem; color:#6b7280;"></p>
+            <p id="pxValidacion"></p>
           </div>
         </fieldset>
         
         <fieldset class="form-section">
           <legend class="section-title">📝 Notas Adicionales</legend>
           
-          <div class="form-row" style="margin-bottom:12px;">
+          <div class="form-row form-row--notas">
             <label for="notas" class="sr-only">Notas adicionales</label>
-            <textarea id="notas" rows="3" placeholder="Observaciones, detalles especiales, instrucciones de entrega..." style="resize:vertical;" aria-label="Notas y observaciones del pedido"></textarea>
+            <textarea id="notas" rows="3" placeholder="Observaciones, detalles especiales, instrucciones de entrega..." aria-label="Notas y observaciones del pedido"></textarea>
           </div>
         </fieldset>
         
-        <div style="display:flex;gap:10px;margin-bottom:8px;">
-          <button id="btnAgregar" type="submit" style="flex:1;font-size:1.1rem;" aria-label="Guardar nuevo pedido">
+        <div class="form-actions">
+          <button id="btnAgregar" type="submit" aria-label="Guardar nuevo pedido">
             Agregar Pedido
           </button>
-          <button id="btnLimpiar" class="ghost" type="button" style="flex:1;font-size:1.1rem;" aria-label="Limpiar formulario">
+          <button id="btnLimpiar" class="ghost" type="button" aria-label="Limpiar formulario">
             Limpiar
           </button>
         </div>
@@ -757,5 +756,7 @@
   </style>
   
   <audio id="audio-notificacion" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto" style="display:none;"></audio>
+
+  <!-- Los modales de strikes los inyecta shared/strikes.js dinámicamente (módulo compartido). -->
 </body>
 </html>

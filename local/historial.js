@@ -1,12 +1,47 @@
+// ============================================
+// HISTORIAL COMPLETO — Sabrofood Reparto (v3)
+// Rediseño 20-09-2026: filtros rápidos, orden
+// por columnas, paginación visual, drill-down
+// de cliente/pedido y gráficos CSS.
+// ============================================
+
 let supabase_client = null;
 let todosLosPedidosHistorial = [];
 let pedidosFiltradosHistorial = [];
-let modoVIPHistorial = false;
+let vistaActual = 'cronologico';      // 'cronologico' | 'vip'
+let paginaActual = 1;
+let ordenCol = 'fecha';               // fecha | cliente | telefono | total | metodo | estado | pedidos | ticket
+let ordenDir = 'desc';
+let clienteFiltroActivo = null;       // { tipo:'tel'|'nombre', valor, etiqueta }
+let filaExpandidaId = null;
 let historialFiltroTimeout = null;
-const HISTORIAL_PAGE_SIZE = 1000;
+
+const HISTORIAL_PAGE_SIZE = 1000;     // lote de consulta a la BD
+const PAGE_SIZE = 50;                 // filas por página visual
+
+const MAPA_METODOS = {
+  efectivo: { label: '💵 Efectivo', color: '#10b981' },
+  tarjeta: { label: '💳 Tarjeta', color: '#3b82f6' },
+  mixto: { label: '💰 Mixto', color: '#a855f7' },
+  transferencia_pendiente: { label: '⏳ Transf. Pend.', color: '#f59e0b' },
+  transferencia_pagada: { label: '✅ Transf. Pagada', color: '#059669' },
+  pagado_local: { label: '🏪 Pagado Local', color: '#ec4899' },
+  otros: { label: '❓ Otros', color: '#94a3b8' }
+};
+
+const MAPA_RUTA = { A: '🔴 Ruta A', B: '🟡 Ruta B', C: '🟢 Ruta C' };
+
+// ---------- Utilidades ----------
 
 function formatoMonedaHistorial(valor) {
   return Math.floor(Number(valor) || 0).toLocaleString('es-CL');
+}
+
+function formatoMontoCorto(valor) {
+  const n = Number(valor) || 0;
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(Math.floor(n));
 }
 
 function escaparHtml(valor) {
@@ -28,6 +63,10 @@ function normalizarTexto(valor) {
 
 function obtenerNombreItem(item) {
   return item?.nombre || item?.nombre_producto || item?.producto || 'Producto sin nombre';
+}
+
+function esGranelItem(item) {
+  return normalizarTexto(obtenerNombreItem(item)).includes('granel');
 }
 
 function obtenerGrupoMetodo(pedido) {
@@ -76,10 +115,21 @@ function obtenerClaseEstado(estado) {
 }
 
 function obtenerTextoEstado(estado) {
-  if (estado === 'anulado') return 'Anulado';
-  if (estado === 'entregado') return 'Entregado';
-  return 'Pendiente';
+  if (estado === 'anulado') return '🚫 Anulado';
+  if (estado === 'entregado') return '✅ Entregado';
+  return '⏳ Pendiente';
 }
+
+function formatearFecha(fecha, conHora = true) {
+  if (!fecha) return '-';
+  const d = new Date(fecha);
+  if (isNaN(d)) return '-';
+  const opciones = { day: '2-digit', month: '2-digit', year: 'numeric' };
+  if (conHora) { opciones.hour = '2-digit'; opciones.minute = '2-digit'; }
+  return d.toLocaleString('es-CL', opciones);
+}
+
+// ---------- Permisos / estado inicial ----------
 
 async function verificarPermisoHistorial() {
   const { data: { user } } = await supabase_client.auth.getUser();
@@ -96,6 +146,8 @@ async function verificarPermisoHistorial() {
   return true;
 }
 
+// ---------- Carga de datos ----------
+
 function mostrarLoading(texto = 'Cargando historial completo...') {
   const loading = document.getElementById('historialLoadingState');
   const wrap = document.getElementById('historialTablaWrap');
@@ -107,17 +159,6 @@ function mostrarLoading(texto = 'Cargando historial completo...') {
 function ocultarLoading() {
   document.getElementById('historialLoadingState').hidden = true;
   document.getElementById('historialTablaWrap').hidden = false;
-}
-
-function actualizarResumenResultados() {
-  const fechaDesde = document.getElementById('fechaDesde').value;
-  const fechaHasta = document.getElementById('fechaHasta').value;
-  document.getElementById('historialResultadosTexto').textContent = `Mostrando ${pedidosFiltradosHistorial.length.toLocaleString('es-CL')} pedido(s) de ${todosLosPedidosHistorial.length.toLocaleString('es-CL')} cargado(s)`;
-  if (fechaDesde || fechaHasta) {
-    document.getElementById('historialPeriodoTexto').textContent = `Período: ${fechaDesde || 'inicio'} a ${fechaHasta || 'hoy'}`;
-  } else {
-    document.getElementById('historialPeriodoTexto').textContent = 'Período: Todo el historial';
-  }
 }
 
 async function obtenerTodosLosPedidos(fechaDesde, fechaHasta) {
@@ -152,10 +193,190 @@ async function cargarHistorial() {
     const fechaHasta = document.getElementById('fechaHasta').value;
     mostrarLoading(fechaDesde || fechaHasta ? 'Cargando historial filtrado por fechas...' : 'Cargando todo el historial...');
     todosLosPedidosHistorial = await obtenerTodosLosPedidos(fechaDesde, fechaHasta);
+    paginaActual = 1;
+    filaExpandidaId = null;
     aplicarFiltrosHistorial();
   } catch (error) {
     console.error('❌ Error cargando historial:', error);
     mostrarLoading('No se pudo cargar el historial completo.');
+  }
+}
+
+// ---------- Filtros ----------
+
+function aplicarFiltrosHistorial() {
+  const busqueda = normalizarTexto(document.getElementById('buscarHistorial').value);
+  const filtroMetodo = document.getElementById('filtroMetodoHistorial').value;
+  const filtroEstado = document.getElementById('filtroEstadoHistorial').value;
+
+  pedidosFiltradosHistorial = todosLosPedidosHistorial.filter((pedido) => {
+    const grupoMetodo = obtenerGrupoMetodo(pedido);
+    const estado = obtenerEstadoPedido(pedido);
+    if (filtroMetodo !== 'todos' && grupoMetodo !== filtroMetodo) return false;
+    if (filtroEstado !== 'todos' && estado !== filtroEstado) return false;
+
+    if (clienteFiltroActivo) {
+      const coincide = clienteFiltroActivo.tipo === 'tel'
+        ? String(pedido.telefono || '') === clienteFiltroActivo.valor
+        : String(pedido.nombre || '') === clienteFiltroActivo.valor;
+      if (!coincide) return false;
+    }
+
+    if (!busqueda) return true;
+
+    const productos = Array.isArray(pedido.items)
+      ? pedido.items.map((item) => `${obtenerNombreItem(item)} ${item.cantidad || ''}`).join(' ')
+      : '';
+    const fechaTexto = pedido.created_at ? new Date(pedido.created_at).toLocaleString('es-CL') : '';
+    const textoCompleto = normalizarTexto([
+      pedido.nombre,
+      pedido.telefono,
+      pedido.direccion,
+      pedido.notas,
+      pedido.metodo_pago,
+      pedido.estado,
+      productos,
+      fechaTexto
+    ].join(' '));
+
+    return textoCompleto.includes(busqueda);
+  });
+
+  paginaActual = 1;
+  citarDetalle();
+  actualizarResumenResultados();
+  actualizarEstadisticas();
+  renderTopProductos();
+  renderGraficos();
+  renderVistaActual();
+  ocultarLoading();
+}
+
+// ---------- Períodos rápidos ----------
+
+function fechaInput(fecha) {
+  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')}`;
+}
+
+function periodoFechas(periodo) {
+  const hoy = new Date();
+  switch (periodo) {
+    case 'hoy':
+      return { desde: fechaInput(hoy), hasta: fechaInput(hoy) };
+    case 'ayer': {
+      const ayer = new Date(hoy);
+      ayer.setDate(ayer.getDate() - 1);
+      return { desde: fechaInput(ayer), hasta: fechaInput(ayer) };
+    }
+    case '7d': {
+      const ini = new Date(hoy);
+      ini.setDate(ini.getDate() - 6);
+      return { desde: fechaInput(ini), hasta: fechaInput(hoy) };
+    }
+    case 'mes':
+      return { desde: `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-01`, hasta: fechaInput(hoy) };
+    case 'anio':
+      return { desde: `${hoy.getFullYear()}-01-01`, hasta: fechaInput(hoy) };
+    default:
+      return { desde: '', hasta: '' };
+  }
+}
+
+function aplicarPeriodoRapido(periodo) {
+  const { desde, hasta } = periodoFechas(periodo);
+  document.getElementById('fechaDesde').value = desde;
+  document.getElementById('fechaHasta').value = hasta;
+  document.querySelectorAll('.historial-chip').forEach((chip) => {
+    chip.classList.toggle('is-active', chip.dataset.periodo === periodo);
+  });
+  cargarHistorial();
+}
+
+// ---------- Drill-down de cliente ----------
+
+function actualizarChipCliente() {
+  const chip = document.getElementById('historialDrillChip');
+  if (!clienteFiltroActivo) {
+    chip.style.display = 'none';
+    chip.innerHTML = '';
+    return;
+  }
+  chip.style.display = 'inline-flex';
+  chip.innerHTML = `🔍 Cliente: <strong>${escaparHtml(clienteFiltroActivo.etiqueta)}</strong> <button type="button" title="Quitar filtro de cliente" aria-label="Quitar filtro de cliente">✕</button>`;
+  chip.querySelector('button').addEventListener('click', () => {
+    clienteFiltroActivo = null;
+    actualizarChipCliente();
+    aplicarFiltrosHistorial();
+  });
+}
+
+function filtrarPorCliente(pedido) {
+  const tel = String(pedido?.telefono || '').trim();
+  const nombre = String(pedido?.nombre || '').trim();
+  clienteFiltroActivo = tel
+    ? { tipo: 'tel', valor: tel, etiqueta: nombre || tel }
+    : { tipo: 'nombre', valor: nombre, etiqueta: nombre || 'Cliente sin identificar' };
+  actualizarChipCliente();
+  aplicarFiltrosHistorial();
+}
+
+function citarDetalle() {
+  filaExpandidaId = null;
+}
+
+// ---------- Orden por columnas ----------
+
+function compararOrden(a, b, col, dir) {
+  let va, vb;
+  if (col === 'fecha') { va = a.created_at || ''; vb = b.created_at || ''; }
+  else if (col === 'cliente') { va = normalizarTexto(a.nombre); vb = normalizarTexto(b.nombre); }
+  else if (col === 'telefono') { va = String(a.telefono || ''); vb = String(b.telefono || ''); }
+  else if (col === 'total') { va = Number(a.total) || 0; vb = Number(b.total) || 0; }
+  else if (col === 'metodo') { va = obtenerGrupoMetodo(a); vb = obtenerGrupoMetodo(b); }
+  else { va = obtenerTextoEstado(obtenerEstadoPedido(a)); vb = obtenerTextoEstado(obtenerEstadoPedido(b)); }
+
+  if (va < vb) return dir === 'asc' ? -1 : 1;
+  if (va > vb) return dir === 'asc' ? 1 : -1;
+  return 0;
+}
+
+function ordenarLista(lista) {
+  return [...lista].sort((a, b) => compararOrden(a, b, ordenCol, ordenDir));
+}
+
+function toggleOrden(col) {
+  if (ordenCol === col) {
+    ordenDir = ordenDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    ordenCol = col;
+    ordenDir = (col === 'fecha' || col === 'total' || col === 'telefono' || col === 'pedidos' || col === 'ticket') ? 'desc' : 'asc';
+  }
+  paginaActual = 1;
+  renderVistaActual();
+}
+
+function flechaOrden(col) {
+  if (ordenCol !== col) return '<span class="sort-arrows">↕</span>';
+  return `<span class="sort-arrows">${ordenDir === 'asc' ? '▲' : '▼'}</span>`;
+}
+
+function configurarOrdenTabla() {
+  document.querySelectorAll('#historialContenido th[data-orden]').forEach((th) => {
+    th.addEventListener('click', () => toggleOrden(th.dataset.orden));
+  });
+}
+
+// ---------- Resumen y estadísticas ----------
+
+function actualizarResumenResultados() {
+  const fechaDesde = document.getElementById('fechaDesde').value;
+  const fechaHasta = document.getElementById('fechaHasta').value;
+  document.getElementById('historialResultadosTexto').textContent =
+    `Mostrando ${pedidosFiltradosHistorial.length.toLocaleString('es-CL')} pedido(s) de ${todosLosPedidosHistorial.length.toLocaleString('es-CL')} cargado(s)`;
+  if (fechaDesde || fechaHasta) {
+    document.getElementById('historialPeriodoTexto').textContent = `Período: ${fechaDesde || 'inicio'} → ${fechaHasta || 'hoy'}`;
+  } else {
+    document.getElementById('historialPeriodoTexto').textContent = 'Período: Todo el historial';
   }
 }
 
@@ -175,6 +396,8 @@ function actualizarEstadisticas() {
   document.getElementById('statTicketPromedio').textContent = `$${formatoMonedaHistorial(ticketPromedio)}`;
 }
 
+// ---------- Top 5 ----------
+
 function renderTopProductos() {
   const contenedor = document.getElementById('listaTopProductos');
   const conteo = {};
@@ -184,13 +407,13 @@ function renderTopProductos() {
     pedido.items.forEach((item) => {
       const nombreVisible = obtenerNombreItem(item);
       const clave = normalizarTexto(nombreVisible);
-      const esGranel = normalizarTexto(nombreVisible).includes('granel');
+      const granel = esGranelItem(item);
 
       if (!conteo[clave]) {
-        conteo[clave] = { nombre: nombreVisible, cantidad: 0, ventas: 0, esGranel };
+        conteo[clave] = { nombre: nombreVisible, cantidad: 0, ventas: 0, esGranel: granel };
       }
 
-      if (esGranel) {
+      if (granel) {
         conteo[clave].cantidad += 1;
         conteo[clave].ventas += Number(item.cantidad) || 0;
       } else {
@@ -234,70 +457,265 @@ function renderTopProductos() {
   `).join('');
 }
 
-function renderVistaCronologica() {
-  const contenedor = document.getElementById('historialContenido');
-  document.getElementById('historialVistaTitulo').textContent = 'Vista Cronológica';
-  document.getElementById('historialVistaDescripcion').textContent = 'Pedidos completos con datos de cliente, cobro y estado.';
+// ---------- Gráficos ----------
 
-  if (!pedidosFiltradosHistorial.length) {
-    contenedor.innerHTML = '<div class="historial-empty">No se encontraron pedidos con los filtros actuales.</div>';
+function renderGraficos() {
+  renderGraficoVentasDias();
+  renderGraficoMetodo();
+}
+
+function renderGraficoVentasDias() {
+  const contenedor = document.getElementById('graficoVentasDias');
+  const mapa = {};
+
+  pedidosFiltradosHistorial.forEach((pedido) => {
+    if (!pedido.created_at) return;
+    const d = new Date(pedido.created_at);
+    if (isNaN(d)) return;
+    const clave = fechaInput(d);
+    mapa[clave] = (mapa[clave] || 0) + (Number(pedido.total) || 0);
+  });
+
+  const fechas = Object.keys(mapa).sort();
+  if (!fechas.length) {
+    contenedor.innerHTML = '<div class="historial-chart-empty">Sin ventas en el rango seleccionado.</div>';
     return;
   }
 
-  contenedor.innerHTML = `
+  const ventana = fechas.slice(-14);
+  const max = Math.max(...ventana.map((f) => mapa[f]), 1);
+
+  contenedor.innerHTML = `<div class="historial-bars-dias">
+    ${ventana.map((f) => {
+      const val = mapa[f];
+      const pct = Math.max(3, Math.round((val / max) * 100));
+      const label = `${f.slice(8, 10)}/${f.slice(5, 7)}`;
+      return `
+        <div class="historial-bar-dia" title="${f} · $${formatoMonedaHistorial(val)}">
+          <div class="bar" style="height:${pct}%">
+            <span class="bar-val">$${formatoMontoCorto(val)}</span>
+          </div>
+          <span class="bar-label">${label}</span>
+        </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function renderGraficoMetodo() {
+  const contenedor = document.getElementById('graficoMetodo');
+  const grupos = {};
+
+  pedidosFiltradosHistorial.forEach((pedido) => {
+    const g = obtenerGrupoMetodo(pedido);
+    grupos[g] = (grupos[g] || 0) + (Number(pedido.total) || 0);
+  });
+
+  const total = Object.values(grupos).reduce((a, b) => a + b, 0);
+  if (!total) {
+    contenedor.innerHTML = '<div class="historial-chart-empty">Sin recaudación en el rango seleccionado.</div>';
+    return;
+  }
+
+  const orden = Object.entries(grupos)
+    .sort((a, b) => b[1] - a[1]);
+
+  contenedor.innerHTML = `<div class="historial-bars-metodo">
+    ${orden.map(([grupo, monto]) => {
+      const meta = MAPA_METODOS[grupo] || MAPA_METODOS.otros;
+      const pct = Math.round((monto / total) * 100);
+      return `
+        <div class="historial-bar-metodo">
+          <div class="hm-head">
+            <span>${meta.label}</span>
+            <span class="hm-monto">$${formatoMonedaHistorial(monto)} (${pct}%)</span>
+          </div>
+          <div class="hm-track">
+            <div class="hm-fill" style="width:${pct}%;background:${meta.color};"></div>
+          </div>
+        </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// ---------- Vista cronológica ----------
+
+function celdaCliente(pedido) {
+  const nombre = pedido.nombre || 'Sin nombre';
+  const tel = String(pedido.telefono || '').trim();
+  let html = `<div class="historial-cliente-nombre historial-cliente-link" data-filtrar-cliente="1">${escaparHtml(nombre)}</div>`;
+  if (tel) html += `<div class="historial-subline">📱 ${escaparHtml(tel)}</div>`;
+  if (pedido.direccion) html += `<div class="historial-subline">📍 ${escaparHtml(pedido.direccion)}</div>`;
+  if (pedido.notas) html += `<div class="historial-subline">📝 ${escaparHtml(pedido.notas)}</div>`;
+  return html;
+}
+
+function celdaProductos(pedido) {
+  if (!Array.isArray(pedido.items) || !pedido.items.length) return 'Sin productos';
+  const lineas = pedido.items.slice(0, 3).map((item) => {
+    const nombre = obtenerNombreItem(item);
+    if (esGranelItem(item)) return `${escaparHtml(nombre)} ($${formatoMonedaHistorial(item.cantidad || 0)})`;
+    return `${escaparHtml(nombre)} (${Number(item.cantidad) || 1}x)`;
+  });
+  let html = lineas.join(', ');
+  if (pedido.items.length > 3) html += ` <strong>+${pedido.items.length - 3} más</strong>`;
+  return html;
+}
+
+function renderVistaCronologica() {
+  const contenedor = document.getElementById('historialContenido');
+  document.getElementById('historialVistaTitulo').textContent = '📜 Vista Cronológica';
+  document.getElementById('historialVistaDescripcion').textContent = 'Pedidos completos con datos de cliente, cobro y estado. Clic en una fila o en el nombre del cliente para explorar.';
+
+  if (!pedidosFiltradosHistorial.length) {
+    contenedor.innerHTML = '<div class="historial-empty">No se encontraron pedidos con los filtros actuales.</div>';
+    actualizarPaginacion(0, 'pedido(s)');
+    return;
+  }
+
+  const lista = ordenarLista(pedidosFiltradosHistorial);
+  const inicio = (paginaActual - 1) * PAGE_SIZE;
+  const pagina = lista.slice(inicio, inicio + PAGE_SIZE);
+  const expandido = filaExpandidaId;
+
+  let html = `
     <table class="historial-table">
       <thead>
         <tr>
-          <th class="historial-col-fecha">Fecha</th>
-          <th>Cliente</th>
-          <th class="historial-col-telefono">Teléfono</th>
+          <th class="historial-col-fecha" data-orden="fecha">Fecha ${flechaOrden('fecha')}</th>
+          <th data-orden="cliente">Cliente ${flechaOrden('cliente')}</th>
+          <th class="historial-col-telefono" data-orden="telefono">Teléfono ${flechaOrden('telefono')}</th>
           <th>Productos</th>
-          <th class="historial-col-total">Total</th>
-          <th class="historial-col-pago">Pago</th>
-          <th class="historial-col-estado">Estado</th>
+          <th class="historial-col-total" data-orden="total">Total ${flechaOrden('total')}</th>
+          <th class="historial-col-pago" data-orden="metodo">Pago ${flechaOrden('metodo')}</th>
+          <th class="historial-col-estado" data-orden="estado">Estado ${flechaOrden('estado')}</th>
         </tr>
       </thead>
-      <tbody>
-        ${pedidosFiltradosHistorial.map((pedido) => {
-          const fecha = pedido.created_at
-            ? new Date(pedido.created_at).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-            : '-';
-          const productos = Array.isArray(pedido.items)
-            ? pedido.items.map((item) => {
-              const nombre = obtenerNombreItem(item);
-              const esGranel = normalizarTexto(nombre).includes('granel');
-              if (esGranel) {
-                return `${escaparHtml(nombre)} ($${formatoMonedaHistorial(item.cantidad || 0)})`;
-              }
-              return `${escaparHtml(nombre)} (${Number(item.cantidad) || 1}x)`;
-            }).join(', ')
-            : 'Sin productos';
-          const estado = obtenerEstadoPedido(pedido);
-          return `
-            <tr>
-              <td>${fecha}</td>
-              <td>
-                <div class="historial-cliente-nombre">${escaparHtml(pedido.nombre || 'Sin nombre')}</div>
-                ${pedido.direccion ? `<div class="historial-subline">📍 ${escaparHtml(pedido.direccion)}</div>` : ''}
-                ${pedido.notas ? `<div class="historial-subline">📝 ${escaparHtml(pedido.notas)}</div>` : ''}
-              </td>
-              <td>${escaparHtml(pedido.telefono || '-')}</td>
-              <td>${productos}</td>
-              <td class="historial-total">$${formatoMonedaHistorial(pedido.total || 0)}</td>
-              <td>${escaparHtml(obtenerEtiquetaMetodo(pedido))}</td>
-              <td><span class="historial-badge ${obtenerClaseEstado(estado)}">${obtenerTextoEstado(estado)}</span></td>
-            </tr>
-          `;
-        }).join('')}
-      </tbody>
-    </table>
-  `;
+      <tbody>`;
+
+  pagina.forEach((pedido) => {
+    const estado = obtenerEstadoPedido(pedido);
+    const grupoMetodo = obtenerGrupoMetodo(pedido);
+    const filaDetalle = expandido === pedido.id ? detallePedidoHtml(pedido) : '';
+    html += `
+      <tr class="fila-pedido ${expandido === pedido.id ? 'is-expanded' : ''}" data-pedido-id="${escaparHtml(pedido.id)}">
+        <td>${formatearFecha(pedido.created_at)}</td>
+        <td>${celdaCliente(pedido)}</td>
+        <td>${escaparHtml(pedido.telefono || '-')}</td>
+        <td>${celdaProductos(pedido)}</td>
+        <td class="historial-total">$${formatoMonedaHistorial(pedido.total || 0)}</td>
+        <td><span class="historial-badge ${grupoMetodo}">${escaparHtml(obtenerEtiquetaMetodo(pedido))}</span></td>
+        <td><span class="historial-badge ${obtenerClaseEstado(estado)}">${obtenerTextoEstado(estado)}</span></td>
+      </tr>
+      ${filaDetalle}`;
+  });
+
+  html += '</tbody></table>';
+  contenedor.innerHTML = html;
+
+  // Eventos
+  contenedor.querySelectorAll('.fila-pedido').forEach((fila) => {
+    fila.addEventListener('click', () => toggleFilaDetalle(fila.dataset.pedidoId));
+  });
+  contenedor.querySelectorAll('[data-filtrar-cliente]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const fila = el.closest('.fila-pedido');
+      const pedido = pedidosFiltradosHistorial.find((p) => String(p.id) === fila.dataset.pedidoId);
+      if (pedido) filtrarPorCliente(pedido);
+    });
+  });
+  contenedor.querySelectorAll('[data-filtrar-cliente-detalle]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pedido = pedidosFiltradosHistorial.find((p) => String(p.id) === el.dataset.pedidoId);
+      if (pedido) filtrarPorCliente(pedido);
+    });
+  });
+
+  configurarOrdenTabla();
+  actualizarPaginacion(pedidosFiltradosHistorial.length, 'pedido(s)');
 }
+
+function toggleFilaDetalle(id) {
+  if (filaExpandidaId === id) {
+    filaExpandidaId = null;
+  } else {
+    filaExpandidaId = id;
+  }
+  renderVistaCronologica();
+}
+
+function detallePedidoHtml(pedido) {
+  const estado = obtenerEstadoPedido(pedido);
+  const grupoMetodo = obtenerGrupoMetodo(pedido);
+  const items = Array.isArray(pedido.items) && pedido.items.length
+    ? pedido.items.map((item) => {
+        const nombre = obtenerNombreItem(item);
+        if (esGranelItem(item)) {
+          return `<div class="historial-detail-item">
+            <span class="di-nombre">⚖️ ${escaparHtml(nombre)}</span>
+            <span class="di-importe">$${formatoMonedaHistorial(item.cantidad || 0)}</span>
+          </div>`;
+        }
+        const cantidad = Number(item.cantidad) || 1;
+        const precio = Number(item.precio) || 0;
+        return `<div class="historial-detail-item">
+          <span class="di-nombre">${escaparHtml(nombre)} <small>× ${cantidad}</small></span>
+          <span class="di-importe">$${formatoMonedaHistorial(cantidad * precio)}</span>
+        </div>`;
+      }).join('')
+    : '<div class="historial-empty" style="padding:10px;">Sin productos registrados.</div>';
+
+  const asignado = pedido.asignado_a
+    ? `🚚 ${String(pedido.asignado_a).replace('repartidor_', 'Repartidor ')}`
+    : '';
+  const ruta = pedido.prioridad
+    ? (MAPA_RUTA[String(pedido.prioridad).toUpperCase()] || `${pedido.prioridad}`)
+    : '';
+
+  return `
+    <tr class="historial-detail-row">
+      <td colspan="7">
+        <div class="historial-detail-grid">
+          <div class="historial-detail-col">
+            <h4>👤 Cliente</h4>
+            <div class="historial-detail-meta">
+              <span><strong>${escaparHtml(pedido.nombre || 'Sin nombre')}</strong></span>
+              <span>📱 ${escaparHtml(pedido.telefono || '-')}</span>
+              <span>📍 ${escaparHtml(pedido.direccion || '-')}</span>
+              ${ruta ? `<span>${ruta}</span>` : ''}
+              ${asignado ? `<span>${asignado}</span>` : ''}
+            </div>
+          </div>
+          <div class="historial-detail-col" style="grid-column: span 1;">
+            <h4>🛒 Productos</h4>
+            <div class="historial-detail-items">${items}</div>
+          </div>
+          <div class="historial-detail-col">
+            <h4>💰 Cobro</h4>
+            <div class="historial-detail-meta">
+              <span class="historial-badge ${grupoMetodo}">${escaparHtml(obtenerEtiquetaMetodo(pedido))}</span>
+              <span class="historial-badge ${obtenerClaseEstado(estado)}">${obtenerTextoEstado(estado)}</span>
+              <span style="font-size:1.25rem;font-weight:800;color:#059669;">$${formatoMonedaHistorial(pedido.total || 0)}</span>
+              <span style="color:#64748b;font-size:0.85rem;">${formatearFecha(pedido.created_at)}</span>
+            </div>
+            ${pedido.notas ? `<div style="margin-top:8px;font-size:0.88rem;color:#475569;">📝 ${escaparHtml(pedido.notas)}</div>` : ''}
+          </div>
+        </div>
+        <div class="historial-detail-actions">
+          <button type="button" class="historial-link-btn" data-filtrar-cliente-detalle="1" data-pedido-id="${escaparHtml(pedido.id)}">🔍 Ver solo este cliente</button>
+          <button type="button" class="historial-link-btn ghost" data-cerrar-detalle="1" data-pedido-id="${escaparHtml(pedido.id)}">Cerrar detalle</button>
+        </div>
+      </td>
+    </tr>`;
+}
+
+// ---------- Vista Ranking VIP ----------
 
 function renderRankingVIP() {
   const contenedor = document.getElementById('historialContenido');
-  document.getElementById('historialVistaTitulo').textContent = 'Ranking VIP';
-  document.getElementById('historialVistaDescripcion').textContent = 'Clientes agrupados por teléfono y ordenados por compras acumuladas.';
+  document.getElementById('historialVistaTitulo').textContent = '👑 Ranking VIP';
+  document.getElementById('historialVistaDescripcion').textContent = 'Clientes agrupados por teléfono y ordenados por compras acumuladas. Clic en un cliente para ver solo sus pedidos.';
 
   const clientes = {};
   pedidosFiltradosHistorial.forEach((pedido) => {
@@ -308,115 +726,145 @@ function renderRankingVIP() {
         telefono: pedido.telefono || '-',
         totalCompras: 0,
         cantidadPedidos: 0,
-        ultimoPedido: pedido.created_at || pedido.fecha || null
+        ultimoPedido: pedido.created_at || pedido.fecha || null,
+        pedidos: []
       };
     }
     clientes[clave].totalCompras += Number(pedido.total) || 0;
     clientes[clave].cantidadPedidos += 1;
+    clientes[clave].pedidos.push(pedido);
     if (pedido.created_at && new Date(pedido.created_at) > new Date(clientes[clave].ultimoPedido || 0)) {
       clientes[clave].ultimoPedido = pedido.created_at;
       clientes[clave].nombre = pedido.nombre || clientes[clave].nombre;
     }
   });
 
-  const ranking = Object.values(clientes).sort((a, b) => b.totalCompras - a.totalCompras);
+  const ranking = Object.values(clientes).sort((a, b) => {
+    let va, vb;
+    if (ordenCol === 'cliente') { va = normalizarTexto(a.nombre); vb = normalizarTexto(b.nombre); }
+    else if (ordenCol === 'telefono') { va = a.telefono; vb = b.telefono; }
+    else if (ordenCol === 'pedidos') { va = a.cantidadPedidos; vb = b.cantidadPedidos; }
+    else if (ordenCol === 'ticket') { va = a.cantidadPedidos ? a.totalCompras / a.cantidadPedidos : 0; vb = b.cantidadPedidos ? b.totalCompras / b.cantidadPedidos : 0; }
+    else if (ordenCol === 'fecha') { va = a.ultimoPedido || ''; vb = b.ultimoPedido || ''; }
+    else { va = a.totalCompras; vb = b.totalCompras; }
+    if (va < vb) return ordenDir === 'asc' ? -1 : 1;
+    if (va > vb) return ordenDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
   if (!ranking.length) {
     contenedor.innerHTML = '<div class="historial-empty">No se encontraron clientes con los filtros actuales.</div>';
+    actualizarPaginacion(0, 'cliente(s)');
     return;
   }
 
-  contenedor.innerHTML = `
+  const totalPaginas = Math.max(1, Math.ceil(ranking.length / PAGE_SIZE));
+  const pagSegura = Math.min(paginaActual, totalPaginas);
+  const inicio = (pagSegura - 1) * PAGE_SIZE;
+  const pagina = ranking.slice(inicio, inicio + PAGE_SIZE);
+
+  let html = `
     <table class="historial-table">
       <thead>
         <tr>
-          <th style="width:90px;">Rank</th>
-          <th>Cliente</th>
-          <th class="historial-col-telefono">Teléfono</th>
-          <th style="width:110px;">Pedidos</th>
-          <th class="historial-col-total">Total Compras</th>
-          <th class="historial-col-total">Ticket Prom.</th>
-          <th class="historial-col-fecha">Último Pedido</th>
+          <th style="width:80px;">Rank</th>
+          <th data-orden="cliente">Cliente ${flechaOrden('cliente')}</th>
+          <th class="historial-col-telefono" data-orden="telefono">Teléfono ${flechaOrden('telefono')}</th>
+          <th style="width:100px;" data-orden="pedidos">Pedidos ${flechaOrden('pedidos')}</th>
+          <th class="historial-col-total" data-orden="total">Total Compras ${flechaOrden('total')}</th>
+          <th class="historial-col-total" data-orden="ticket">Ticket Prom. ${flechaOrden('ticket')}</th>
+          <th class="historial-col-fecha" data-orden="fecha">Último Pedido ${flechaOrden('fecha')}</th>
         </tr>
       </thead>
       <tbody>
-        ${ranking.map((cliente, index) => {
+        ${pagina.map((cliente, index) => {
+          const posicion = inicio + index;
           const ticket = cliente.cantidadPedidos > 0 ? Math.round(cliente.totalCompras / cliente.cantidadPedidos) : 0;
-          const ultimoPedido = cliente.ultimoPedido
-            ? new Date(cliente.ultimoPedido).toLocaleDateString('es-CL')
-            : '-';
+          const ultimoPedido = formatearFecha(cliente.ultimoPedido, false);
           return `
-            <tr>
-              <td>${index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}</td>
-              <td class="historial-cliente-nombre">${escaparHtml(cliente.nombre)}</td>
+            <tr class="fila-pedido" data-vip-cliente="${escaparHtml(cliente.telefono)}" data-vip-nombre="${escaparHtml(cliente.nombre)}">
+              <td>${posicion === 0 ? '🥇' : posicion === 1 ? '🥈' : posicion === 2 ? '🥉' : `#${posicion + 1}`}</td>
+              <td><div class="historial-cliente-nombre historial-cliente-link" data-filtrar-vip="1">${escaparHtml(cliente.nombre)}</div></td>
               <td>${escaparHtml(cliente.telefono)}</td>
               <td>${cliente.cantidadPedidos.toLocaleString('es-CL')}</td>
               <td class="historial-total">$${formatoMonedaHistorial(cliente.totalCompras)}</td>
               <td>$${formatoMonedaHistorial(ticket)}</td>
               <td>${ultimoPedido}</td>
-            </tr>
-          `;
+            </tr>`;
         }).join('')}
       </tbody>
-    </table>
-  `;
-}
+    </table>`;
 
-function aplicarFiltrosHistorial() {
-  const busqueda = normalizarTexto(document.getElementById('buscarHistorial').value);
-  const filtroMetodo = document.getElementById('filtroMetodoHistorial').value;
-  const filtroEstado = document.getElementById('filtroEstadoHistorial').value;
+  contenedor.innerHTML = html;
 
-  pedidosFiltradosHistorial = todosLosPedidosHistorial.filter((pedido) => {
-    const grupoMetodo = obtenerGrupoMetodo(pedido);
-    const estado = obtenerEstadoPedido(pedido);
-    if (filtroMetodo !== 'todos' && grupoMetodo !== filtroMetodo) return false;
-    if (filtroEstado !== 'todos' && estado !== filtroEstado) return false;
-    if (!busqueda) return true;
-
-    const productos = Array.isArray(pedido.items)
-      ? pedido.items.map((item) => `${obtenerNombreItem(item)} ${item.cantidad || ''}`).join(' ')
-      : '';
-    const fechaTexto = pedido.created_at ? new Date(pedido.created_at).toLocaleString('es-CL') : '';
-    const textoCompleto = normalizarTexto([
-      pedido.nombre,
-      pedido.telefono,
-      pedido.direccion,
-      pedido.notas,
-      pedido.metodo_pago,
-      pedido.estado,
-      productos,
-      fechaTexto
-    ].join(' '));
-
-    return textoCompleto.includes(busqueda);
+  contenedor.querySelectorAll('[data-filtrar-vip]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const fila = el.closest('.fila-pedido');
+      filtrarPorCliente({ telefono: fila.dataset.vipCliente, nombre: fila.dataset.vipNombre });
+    });
   });
 
-  actualizarResumenResultados();
-  actualizarEstadisticas();
-  renderTopProductos();
-  if (modoVIPHistorial) {
-    renderRankingVIP();
-  } else {
-    renderVistaCronologica();
-  }
-  ocultarLoading();
+  configurarOrdenTabla();
+  actualizarPaginacion(ranking.length, 'cliente(s)');
 }
 
-function toggleModoVIP() {
-  modoVIPHistorial = !modoVIPHistorial;
-  const btn = document.getElementById('btnToggleVIP');
-  if (modoVIPHistorial) {
-    btn.textContent = 'Vista Cronológica';
-    btn.classList.remove('accent');
-    btn.classList.add('secondary');
-    renderRankingVIP();
-  } else {
-    btn.textContent = 'Ranking VIP';
-    btn.classList.remove('secondary');
-    btn.classList.add('accent');
-    renderVistaCronologica();
-  }
+// ---------- Vistas y paginación ----------
+
+function renderVistaActual() {
+  if (vistaActual === 'vip') renderRankingVIP();
+  else renderVistaCronologica();
 }
+
+function switchVista(vista) {
+  vistaActual = vista;
+  paginaActual = 1;
+  filaExpandidaId = null;
+  document.getElementById('tabCronologico').classList.toggle('is-active', vista === 'cronologico');
+  document.getElementById('tabCronologico').setAttribute('aria-selected', vista === 'cronologico');
+  document.getElementById('tabVip').classList.toggle('is-active', vista === 'vip');
+  document.getElementById('tabVip').setAttribute('aria-selected', vista === 'vip');
+  renderVistaActual();
+}
+
+function actualizarPaginacion(totalVisibles, sufijo) {
+  const totalPaginas = Math.max(1, Math.ceil(totalVisibles / PAGE_SIZE));
+  paginaActual = Math.min(Math.max(1, paginaActual), totalPaginas);
+
+  const desde = totalVisibles === 0 ? 0 : (paginaActual - 1) * PAGE_SIZE + 1;
+  const hasta = Math.min(paginaActual * PAGE_SIZE, totalVisibles);
+  const etiquetaRango = totalVisibles === 0
+    ? 'Sin resultados'
+    : `Mostrando ${desde.toLocaleString('es-CL')}–${hasta.toLocaleString('es-CL')} de ${totalVisibles.toLocaleString('es-CL')} ${sufijo}`;
+
+  document.getElementById('historialPaginacionInfo').textContent = `${etiquetaRango} · Página ${paginaActual} de ${totalPaginas}`;
+  document.getElementById('btnPagAnterior').disabled = paginaActual <= 1;
+  document.getElementById('btnPagSiguiente').disabled = paginaActual >= totalPaginas;
+  document.getElementById('btnPagNumero').textContent = String(paginaActual);
+  document.getElementById('historialPaginacion').hidden = totalVisibles === 0;
+}
+
+function irPagina(nueva) {
+  const totalVisibles = vistaActual === 'vip'
+    ? Object.keys(agruparClientesVIP()).length
+    : pedidosFiltradosHistorial.length;
+  const totalPaginas = Math.max(1, Math.ceil(totalVisibles / PAGE_SIZE));
+  paginaActual = Math.min(Math.max(1, nueva), totalPaginas);
+  renderVistaActual();
+  const wrap = document.getElementById('historialTablaWrap');
+  if (wrap) wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function agruparClientesVIP() {
+  const clientes = {};
+  pedidosFiltradosHistorial.forEach((pedido) => {
+    const clave = pedido.telefono || `sin-telefono-${pedido.nombre || 'cliente'}`;
+    if (!clientes[clave]) clientes[clave] = { nombre: pedido.nombre || 'Sin nombre', telefono: pedido.telefono || '-' };
+  });
+  return clientes;
+}
+
+// ---------- Exportar CSV ----------
 
 function exportarCSV() {
   if (!pedidosFiltradosHistorial.length) {
@@ -424,7 +872,7 @@ function exportarCSV() {
     return;
   }
   const filas = [
-    ['Fecha', 'Cliente', 'Telefono', 'Total', 'Metodo', 'Estado', 'Direccion', 'Productos', 'Notas'],
+    ['Fecha', 'Cliente', 'Telefono', 'Total', 'Metodo', 'Estado', 'Direccion', 'Productos', 'Notas', 'Prioridad', 'Asignado'],
     ...pedidosFiltradosHistorial.map((pedido) => [
       pedido.created_at ? new Date(pedido.created_at).toLocaleString('es-CL') : '',
       pedido.nombre || '',
@@ -434,7 +882,9 @@ function exportarCSV() {
       obtenerTextoEstado(obtenerEstadoPedido(pedido)),
       pedido.direccion || '',
       Array.isArray(pedido.items) ? pedido.items.map((item) => `${obtenerNombreItem(item)} (${item.cantidad || 1})`).join(' | ') : '',
-      pedido.notas || ''
+      pedido.notas || '',
+      pedido.prioridad || '',
+      pedido.asignado_a || ''
     ])
   ];
 
@@ -452,14 +902,23 @@ function exportarCSV() {
   URL.revokeObjectURL(url);
 }
 
+// ---------- Limpiar ----------
+
 function limpiarFiltros() {
   document.getElementById('buscarHistorial').value = '';
   document.getElementById('filtroMetodoHistorial').value = 'todos';
   document.getElementById('filtroEstadoHistorial').value = 'todos';
   document.getElementById('fechaDesde').value = '';
   document.getElementById('fechaHasta').value = '';
+  clienteFiltroActivo = null;
+  actualizarChipCliente();
+  document.querySelectorAll('.historial-chip').forEach((chip) => {
+    chip.classList.toggle('is-active', chip.dataset.periodo === 'todo');
+  });
   cargarHistorial();
 }
+
+// ---------- Eventos ----------
 
 function conectarEventos() {
   document.getElementById('buscarHistorial').addEventListener('input', () => {
@@ -468,14 +927,28 @@ function conectarEventos() {
   });
   document.getElementById('filtroMetodoHistorial').addEventListener('change', aplicarFiltrosHistorial);
   document.getElementById('filtroEstadoHistorial').addEventListener('change', aplicarFiltrosHistorial);
-  document.getElementById('btnAplicarFiltroFecha').addEventListener('click', cargarHistorial);
+  document.getElementById('btnAplicarFiltroFecha').addEventListener('click', () => {
+    // Si el usuario filtra con fechas manuales, ningún chip de período queda activo
+    document.querySelectorAll('.historial-chip').forEach((chip) => chip.classList.remove('is-active'));
+    cargarHistorial();
+  });
   document.getElementById('btnLimpiarFiltros').addEventListener('click', limpiarFiltros);
-  document.getElementById('btnToggleVIP').addEventListener('click', toggleModoVIP);
   document.getElementById('btnExportarHistorialCompleto').addEventListener('click', exportarCSV);
   document.getElementById('btnCerrarSesionHistorial').addEventListener('click', async () => {
     await supabaseLogout();
     window.location.href = '../index.html';
   });
+
+  document.getElementById('tabCronologico').addEventListener('click', () => switchVista('cronologico'));
+  document.getElementById('tabVip').addEventListener('click', () => switchVista('vip'));
+
+  document.querySelectorAll('.historial-chip').forEach((btn) => {
+    btn.addEventListener('click', () => aplicarPeriodoRapido(btn.dataset.periodo));
+  });
+
+  document.getElementById('btnPagAnterior').addEventListener('click', () => irPagina(paginaActual - 1));
+  document.getElementById('btnPagSiguiente').addEventListener('click', () => irPagina(paginaActual + 1));
+  document.getElementById('btnPagNumero').addEventListener('click', () => irPagina(paginaActual));
 }
 
 document.addEventListener('DOMContentLoaded', async () => {

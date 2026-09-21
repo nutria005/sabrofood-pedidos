@@ -121,6 +121,18 @@ const OfflineManager = {
         await client.from('pedidos').update({ orden_ruta: datos.orden }).eq('id', datos.id);
         break;
         
+      case 'REGISTRAR_STRIKE':
+        await client.from('strikes_clientes').insert({
+          id: generarId(),
+          telefono: datos.telefono,
+          nombre: datos.nombre,
+          motivo: datos.motivo,
+          registrado_por: datos.registrado_por,
+          estado: 'ACTIVO',
+          expira_en: datos.expira_en
+        });
+        break;
+        
       default:
         console.warn('⚠️ Tipo de acción desconocida:', tipo);
     }
@@ -1740,6 +1752,23 @@ async function guardarPedido() {
     btnAgregar.textContent = 'Guardando...';
     btnAgregar.disabled = true;
 
+    // BLOQUEO STRIKES: cliente baneado no puede confirmar nuevos pedidos
+    // (decisión del administrador; la observación NO bloquea).
+    try {
+      const telStrike = String((validaciones.telefono && validaciones.telefono.valor) || '').replace(/\D/g, '');
+      if (telStrike.length >= 6) {
+        const cons = await Promise.resolve(SistemaStrikes.recurso.consultarCliente(telStrike));
+        if (cons && cons.data && cons.data.contexto.baneado) {
+          ErrorHandler.mostrarError('🚫 Cliente BANEADO: no puede confirmar nuevos pedidos. Solo el administrador puede revisar esta situación.');
+          btnAgregar.textContent = textoOriginal;
+          btnAgregar.disabled = false;
+          return;
+        }
+      }
+    } catch (errStrike) {
+      console.warn('⚠️ Chequeo de baneo omitido (accesorio, no bloquea):', errStrike);
+    }
+
     const client = getSupabaseClient();
     if (!client) {
       console.error('❌ Cliente no disponible');
@@ -3057,7 +3086,7 @@ async function mostrarHistorialCliente(telefono, nombreCliente) {
   // Mostrar el modal
   const modalBody = getElement('histModalBody');
   if (modalBody) {
-    modalBody.innerHTML = historialHTML;
+    modalBody.innerHTML = historialHTML + '<div id="strikesSection"></div>';
     getElement('histModal').classList.add('show');
     
     // MEJORA 3: Event listeners para botones "Repetir"
@@ -3069,7 +3098,83 @@ async function mostrarHistorialCliente(telefono, nombreCliente) {
         repetirPedido(pedidoOriginal);
       };
     });
+    
+    // Sección de strikes del cliente (el repartidor puede verlos y registrar)
+    const strikesSection = modalBody.querySelector('#strikesSection');
+    if (strikesSection) {
+      renderSeccionStrikes(strikesSection, telefono, nombreCliente);
+    }
   }
+}
+
+function escapeHtml(texto) {
+  return String(texto == null ? '' : texto)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ========================================
+// ============================================================
+// SISTEMA DE STRIKES — INTEGRADOR DEL MÓDULO COMPARTIDO (shared/strikes.js)
+// MODO DEMO (LOCAL): la capa de datos vive en localStorage vía SistemaStrikes.recurso.
+// Fase Supabase: se reimplementará SistemaStrikes.recurso sin tocar este archivo.
+// ============================================================
+
+const STRIKES_CONFIG = {
+  LIMITE_REVISION: SistemaStrikes.LIMITE_REVISION,
+  VIGENCIA_MESES: SistemaStrikes.VIGENCIA_MESES
+};
+
+function getEmailActualStrikes() {
+  try {
+    const auth = JSON.parse(localStorage.getItem('sabrofood-auth') || 'null');
+    return (auth && (auth.email || (auth.user && auth.user.email))) || '';
+  } catch (e) { return ''; }
+}
+
+function getRegistradoPorStrikes() {
+  return SistemaStrikes.registradoPorActual();
+}
+
+async function cargarStrikesCliente(telefono) {
+  try {
+    const res = await SistemaStrikes.recurso.obtenerStrikes(telefono);
+    return res.data || [];
+  } catch (err) {
+    console.warn('⚠️ Consulta de strikes falló (accesorio, no bloquea):', err);
+    return [];
+  }
+}
+
+async function registrarStrikeCliente(telefono, nombreCliente, motivo, registradoPor) {
+  try {
+    const reg = SistemaStrikes.construirRegistro({
+      telefono, nombre: nombreCliente, motivo, observacion: '',
+      pedidoId: null, origen: 'HISTORIAL', registrado_por: registradoPor
+    });
+    if (!reg.ok) { ErrorHandler.mostrarError(reg.mensaje); return false; }
+    const res = await SistemaStrikes.recurso.registrarStrike(reg.strike);
+    if (!res.error && window.ErrorHandler && ErrorHandler.mostrarExito) {
+      ErrorHandler.mostrarExito('Strike registrado correctamente');
+    }
+    return !res.error;
+  } catch (err) {
+    console.error('❌ Error al registrar strike:', err);
+    ErrorHandler.mostrarError('Error al registrar strike: ' + err.message);
+    return false;
+  }
+}
+
+// ---- Render de la sección de strikes del historial del cliente (repartidor) ----
+async function renderSeccionStrikes(container, telefono, nombreCliente) {
+  if (!container) return;
+  await SistemaStrikes.renderSeccionStrikes(container, telefono, nombreCliente, {
+    esAdmin: false,
+    onRegistrado: () => renderSeccionStrikes(container, telefono, nombreCliente)
+  });
 }
 
 // Helpers
@@ -3463,6 +3568,14 @@ function render(datosParaRenderizar){
           <button class="btn-transferencia-pagada" type="button" aria-label="Marcar transferencia como pagada" data-doc="${d.id}" style="background: #10b981; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;">💰 Transf. Pagada</button>
         ` : ''}
         
+        <button class="btn-historial" type="button" data-telefono="${d.telefono || ''}" data-nombre="${d.nombre || ''}" title="Ver historial del cliente">
+          📚 Historial
+        </button>
+        
+        <button class="btn-reportar-strike" type="button" data-doc="${d.id}" data-telefono="${d.telefono || ''}" data-nombre="${d.nombre || ''}" title="Reportar incidente del cliente (strike)">
+          ⚠️ Reportar incidente
+        </button>
+        
         <!-- Botón de menú compacto - DESHABILITADO PARA REPARTIDORES -->
         <!-- Los repartidores no necesitan editar, anular o eliminar pedidos -->
         
@@ -3538,6 +3651,29 @@ function render(datosParaRenderizar){
       ev.stopPropagation();
       marcarTransferenciaPagada(d.id);
     };
+    
+    // Botón de historial del cliente
+    const btnHistorial = div.querySelector('.btn-historial');
+    if(btnHistorial) {
+      btnHistorial.onclick = (ev) => {
+        ev.stopPropagation();
+        mostrarHistorialCliente(btnHistorial.dataset.telefono, btnHistorial.dataset.nombre);
+      };
+    }
+
+    // Botón de reporte de incidente (strike) — módulo compartido, origen PEDIDO
+    const btnReportarStrike = div.querySelector('.btn-reportar-strike');
+    if (btnReportarStrike) {
+      btnReportarStrike.onclick = (ev) => {
+        ev.stopPropagation();
+        SistemaStrikes.abrirModalRegistrarStrike({
+          telefono: btnReportarStrike.dataset.telefono,
+          nombre: btnReportarStrike.dataset.nombre,
+          pedidoId: btnReportarStrike.dataset.doc || null,
+          origen: 'PEDIDO'
+        });
+      };
+    }
     
     // Event listeners del menú de acciones removidos - No se necesitan en repartidor
     
@@ -4474,6 +4610,9 @@ function copiarDatosHistorial(nombre, direccion, metodoPago) {
 function configurarBusquedaHistorial() {
   const telefonoInput = document.getElementById('telefono');
   if (!telefonoInput) return;
+
+  // Callback para "Ver contexto" del aviso de strikes (baneado/observación/alertas)
+  SistemaStrikes.onVerContexto = (tel, nombre) => mostrarHistorialCliente(tel, nombre);
   
   telefonoInput.addEventListener('input', function() {
     const telefono = this.value.replace(/\D/g, ''); // Solo números
@@ -4486,6 +4625,8 @@ function configurarBusquedaHistorial() {
     // Buscar con delay para evitar muchas consultas
     historialTimeout = setTimeout(() => {
       buscarHistorialPrevio(telefono);
+      // Aviso dinámico de estado de strikes (baneado bloquea, observación avisa...)
+      SistemaStrikes.pintarAvisoClienteEnFormulario(telefono);
     }, 500); // Esperar 500ms después de dejar de escribir
   });
   
