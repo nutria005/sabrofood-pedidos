@@ -23,6 +23,9 @@ function inicializarSupabase() {
     };
     
     supabase_shared = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, options);
+    // Exponer el cliente a nivel global para que otros módulos (strikes.js) puedan usarlo
+    window.supabase_client = supabase_shared;
+    window.getSupabaseClient = function () { return supabase_shared; };
     console.log('✅ Cliente Supabase inicializado desde shared/supabase-config.js');
   }
   return supabase_shared;
